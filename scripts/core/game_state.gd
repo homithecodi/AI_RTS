@@ -128,21 +128,3 @@ func _finish(win: int) -> void:
 	winner = win
 	game_over.emit(win)
 	message.emit("VICTORY" if win == Defs.TEAM_PLAYER else "DEFEAT", win)
-
-func mark_defeat(team: int) -> void:
-	var f: Faction = factions.get(team)
-	if f == null or f.defeated:
-		return
-	f.defeated = true
-	if not f.buildings.is_empty() or not f.units.is_empty():
-		# Only truly defeated once nothing of theirs remains.
-		var has_any := false
-		for b in f.buildings:
-			if not b.dead:
-				has_any = true
-		for u in f.units:
-			if not u.dead:
-				has_any = true
-		if has_any:
-			return
-	resources_changed.emit(team)

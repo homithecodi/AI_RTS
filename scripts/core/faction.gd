@@ -37,12 +37,6 @@ func power_ratio() -> float:
 func is_low_power() -> bool:
 	return power_used > power_produced + 0.01
 
-func has_producer(producer_id: String) -> bool:
-	for b in buildings:
-		if b.active and b.def_id == producer_id:
-			return true
-	return false
-
 func rebuild_power() -> void:
 	var produced := 0.0
 	var used := 0.0
@@ -66,10 +60,3 @@ func tick_economy(delta: float) -> void:
 
 func is_alive() -> bool:
 	return not defeated
-
-func army_strength() -> float:
-	var total := 0.0
-	for u in units:
-		if not u.dead:
-			total += u.max_hp
-	return total

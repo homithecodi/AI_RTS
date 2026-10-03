@@ -328,9 +328,6 @@ func _issue_order(screen_pos: Vector2) -> void:
 func command_move(units: Array[Unit], dest: Vector3, attacking: bool) -> void:
 	_issue_move(units, dest, attacking)
 
-func command_order(screen_pos: Vector2) -> void:
-	_issue_order(screen_pos)
-
 func _issue_move(units: Array[Unit], dest: Vector3, attacking: bool) -> void:
 	var usable: Array[Unit] = []
 	for u in units:

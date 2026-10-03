@@ -17,6 +17,8 @@ var _cooldown: float = 0.0
 var _grid_cell := Vector2i(99999, 99999)
 var _scan_timer: float = 0.0
 
+const DEFAULT_RALLY_DIST := 10.0
+
 # The node must already be inside the tree before this runs: exit points and ore
 # gathering both need a valid global transform.
 func initialize(building_id: String, in_team: int, pos: Vector3, w: GameWorld,
@@ -31,7 +33,7 @@ func initialize(building_id: String, in_team: int, pos: Vector3, w: GameWorld,
 	build_health_bar(float(d.get("height", 5.0)) + 0.7,
 		maxf(float(d.get("size_x", 6.0)), float(d.get("size_z", 6.0))) * 0.5)
 	build_selection_ring(float(d.get("footprint", 6.0)) * 0.62)
-	rally_point = exit_point() + Vector3(0, 0, 8.0)
+	rally_point = default_rally_point()
 	if instant:
 		finish_construction()
 	elif model_root != null:
@@ -48,8 +50,16 @@ func footprint_radius() -> float:
 	return float(def.get("footprint", 6.0)) * 0.5
 
 func exit_point() -> Vector3:
-	var off := Vector3(0, 0, float(def.get("size_z", 6.0)) * 0.5 + 4.0)
-	return global_position + off.rotated(Vector3.UP, rotation.y)
+	return global_position + _front_offset(float(def.get("size_z", 6.0)) * 0.5 + 4.0)
+
+# Where freshly produced units walk to, and the fallback whenever no rally point
+# has been set. The offset is rotated by the heading so it stays in front of the
+# structure's door instead of drifting sideways on a rotated one.
+func default_rally_point() -> Vector3:
+	return exit_point() + _front_offset(DEFAULT_RALLY_DIST)
+
+func _front_offset(distance: float) -> Vector3:
+	return Vector3(0.0, 0.0, distance).rotated(Vector3.UP, rotation.y)
 
 func produces() -> Array:
 	return def.get("units", []) as Array
@@ -86,12 +96,6 @@ func cancel_queue_entry(index: int) -> void:
 		f.ore += float(item["cost"]) * 0.75
 	queue.remove_at(index)
 
-func queue_progress() -> float:
-	if queue.is_empty():
-		return 0.0
-	var head: Dictionary = queue[0]
-	return 1.0 - float(head["remaining"]) / maxf(float(head["total"]), 0.001)
-
 func queue_head_id() -> String:
 	if queue.is_empty():
 		return ""
@@ -121,7 +125,7 @@ func _process(delta: float) -> void:
 		_tick_weapon(delta)
 	else:
 		_tick_construction(delta)
-	_update_overlay(delta)
+	_update_overlay()
 
 func _tick_construction(delta: float) -> void:
 	if build_progress >= 1.0:
@@ -149,17 +153,16 @@ func _tick_queue(delta: float) -> void:
 func _deliver(unit_id: String) -> void:
 	var exit := exit_point()
 	exit.y = world.terrain.height_at(exit.x, exit.z)
-	var heading := rotation.y
-	var u := world.spawn_unit(unit_id, team, exit, heading)
-	if u != null and def.get("units", null) != null:
-		var dest := rally_point if rally_set else exit_point() + Vector3(0, 0, 10.0)
+	var u := world.spawn_unit(unit_id, team, exit, rotation.y)
+	if u != null and not produces().is_empty():
+		var dest := rally_point if rally_set else default_rally_point()
 		dest.x = clampf(dest.x, -world.map_half() + 8.0, world.map_half() - 8.0)
 		dest.z = clampf(dest.z, -world.map_half() + 8.0, world.map_half() - 8.0)
 		dest.y = world.terrain.height_at(dest.x, dest.z)
 		u.order_move(dest)
 		u.slot = _rally_slot(u)
 	if rally_set and rally_point.distance_to(global_position) < 3.0:
-		rally_point = exit_point() + Vector3(0, 0, 10.0)
+		rally_point = default_rally_point()
 
 func _rally_slot(_u: Unit) -> Vector3:
 	var others := rally_members().size()
@@ -238,13 +241,9 @@ func die(killer: Entity = null) -> void:
 	if dead:
 		return
 	var size := maxf(footprint_radius() * 0.55, 1.0)
-	Effects.explosion(world.effects, center(), size * 1.6)
-	Effects.wreck(world.effects, global_position, size)
-	Effects.explosion(world.effects, global_position + Vector3(1.5, 0.5, 0), size)
-	Effects.explosion(world.effects, global_position + Vector3(-1.5, 0.5, 1.0), size)
-	dead = true
-	set_selected(false)
-	visible = false
-	world.on_entity_died(self, killer)
-	died.emit(self)
-	queue_free()
+	if world != null:
+		Effects.explosion(world.effects, center(), size * 1.6)
+		Effects.wreck(world.effects, global_position, size)
+		Effects.explosion(world.effects, global_position + Vector3(1.5, 0.5, 0), size)
+		Effects.explosion(world.effects, global_position + Vector3(-1.5, 0.5, 1.0), size)
+	_finish_death(killer)

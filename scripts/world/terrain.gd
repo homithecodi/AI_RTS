@@ -8,7 +8,6 @@ const STEP := MAP_SIZE / float(GRID)
 var _heights := PackedFloat32Array()
 var _half := MAP_SIZE * 0.5
 var _patch := 0.0
-var _detail := 0.0
 var _flatten: Array[Dictionary] = []
 
 var minimap_texture: ImageTexture = null
@@ -218,18 +217,6 @@ func raycast(origin: Vector3, dir: Vector3, max_dist: float = 1200.0) -> Diction
 			return {"point": hit, "normal": normal_at(hit.x, hit.z)}
 		step = minf(step * 1.12, 9.0)
 	return {}
-
-func is_flat_enough(pos: Vector3, radius: float, max_slope: float) -> bool:
-	var samples := 8
-	for i in samples:
-		var a := TAU * float(i) / float(samples)
-		var px := pos.x + cos(a) * radius
-		var pz := pos.z + sin(a) * radius
-		if not in_bounds(px, pz):
-			return false
-		if slope_at(px, pz) > max_slope:
-			return false
-	return true
 
 func build_minmap_texture(size: int) -> ImageTexture:
 	var img := Image.create(size, size, false, Image.FORMAT_RGB8)

@@ -453,13 +453,7 @@ func _refresh_production() -> void:
 		prod_box.add_child(head)
 		if not b.active:
 			var pct := int(b.build_progress * 100.0)
-			var pb := ProgressBar.new()
-			pb.show_percentage = false
-			pb.max_value = 1.0
-			pb.value = b.build_progress
-			pb.custom_minimum_size = Vector2(190, 8)
-			pb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			prod_box.add_child(pb)
+			prod_box.add_child(_progress_bar(b.build_progress, 1.0, Vector2(190, 8)))
 			prod_box.add_child(_label("Under construction  %d%%" % pct, 11))
 			continue
 		for uid in b.produces():
@@ -483,15 +477,9 @@ func _refresh_production() -> void:
 				row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				prod_box.add_child(row)
 				if idx == 0:
-					var pb2 := ProgressBar.new()
-					pb2.show_percentage = false
-					pb2.min_value = 0.0
-					pb2.max_value = maxf(float(item["total"]), 0.001)
-					pb2.value = maxf(float(item["total"]) - float(item["remaining"]), 0.0)
-					pb2.custom_minimum_size = Vector2(120, 12)
-					pb2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-					pb2.mouse_filter = Control.MOUSE_FILTER_IGNORE
-					row.add_child(pb2)
+					var total := maxf(float(item["total"]), 0.001)
+					var done := maxf(total - float(item["remaining"]), 0.0)
+					row.add_child(_progress_bar(done, total, Vector2(120, 12)))
 				else:
 					var lbl := _label("...", 12, Color(0.6, 0.64, 0.70))
 					lbl.custom_minimum_size = Vector2(120, 12)
@@ -524,6 +512,17 @@ func _clear(box: Node) -> void:
 	for c in box.get_children():
 		box.remove_child(c)
 		c.queue_free()
+
+func _progress_bar(value: float, max_value: float, size: Vector2) -> ProgressBar:
+	var pb := ProgressBar.new()
+	pb.show_percentage = false
+	pb.min_value = 0.0
+	pb.max_value = max_value
+	pb.value = value
+	pb.custom_minimum_size = size
+	pb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return pb
 
 # --- build menu ----------------------------------------------------------
 func _on_build_pressed(id: String) -> void:

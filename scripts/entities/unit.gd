@@ -299,7 +299,7 @@ func _apply(delta: float) -> void:
 			var t := 1.0 - clampf(_spawn_credit / 0.55, 0.0, 1.0)
 			model_root.scale = Vector3.ONE * (0.25 + 0.75 * t)
 
-	_update_overlay(delta)
+	_update_overlay()
 
 # Unwrapped turning avoids visible snapping when crossing +/-PI.
 func _turn_toward(from: float, to: float, max_step: float) -> float:
@@ -315,9 +315,4 @@ func die(killer: Entity = null) -> void:
 	if world != null:
 		Effects.explosion(world.effects, center(), size)
 		Effects.wreck(world.effects, global_position, size * 0.75)
-	dead = true
-	set_selected(false)
-	visible = false
-	world.on_entity_died(self, killer)
-	died.emit(self)
-	queue_free()
+	_finish_death(killer)

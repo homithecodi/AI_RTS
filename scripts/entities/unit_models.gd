@@ -20,7 +20,7 @@ static func build(unit_id: String, team: int) -> Dictionary:
 	match unit_id:
 		"rifleman": return _rifleman(root, paint_m, dark_m, metal_m, team_glow)
 		"rocketeer": return _rocketeer(root, paint_m, dark_m, metal_m, team_glow)
-		"scout": return _scout(root, paint_m, dark_m, metal_m, glass_m, team_glow)
+		"scout": return _scout(root, paint_m, dark_m, metal_m, glass_m)
 		"tank": return _tank(root, paint_m, dark_m, metal_m, team_glow)
 		"missile_tank": return _missile_tank(root, paint_m, dark_m, metal_m, team_glow)
 	return {"root": root, "body": root, "turret": root, "muzzle": null, "wheels": []}
@@ -61,7 +61,7 @@ static func _rocketeer(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	var muzzle := MeshKit.empty("Muzzle", Vector3(0.53, 1.86, 1.18), body)
 	return {"root": root, "body": body, "turret": body, "muzzle": muzzle, "wheels": []}
 
-static func _scout(root: Node3D, paint, dark, metal, glass, glow) -> Dictionary:
+static func _scout(root: Node3D, paint, dark, metal, glass) -> Dictionary:
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
 	var wheels: Array = []
 	for sx in [-1.0, 1.0]:
@@ -84,15 +84,16 @@ static func _scout(root: Node3D, paint, dark, metal, glass, glow) -> Dictionary:
 	var muzzle := MeshKit.empty("Muzzle", Vector3(0.0, 0.04, 1.36), turret)
 	return {"root": root, "body": body, "turret": turret, "muzzle": muzzle, "wheels": wheels}
 
-static func _tracks(root: Node3D, paint, dark) -> void:
+static func _tracks(root: Node3D, dark) -> void:
+	var plate := MeshKit.mat(Color(0.18, 0.19, 0.2), 0.75, 0.3)
 	for sx in [-1.0, 1.0]:
 		MeshKit.box(root, Vector3(0.72, 0.80, 4.70), Vector3(sx * 1.52, 0.50, 0.0), dark)
 		for i in 5:
 			MeshKit.box(root, Vector3(0.78, 0.86, 0.16),
-				Vector3(sx * 1.52, 0.50, -1.9 + i * 0.95), MeshKit.mat(Color(0.18, 0.19, 0.2), 0.75, 0.3))
+				Vector3(sx * 1.52, 0.50, -1.9 + i * 0.95), plate)
 
 static func _tank(root: Node3D, paint, dark, metal, glow) -> Dictionary:
-	_tracks(root, paint, dark)
+	_tracks(root, dark)
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
 	MeshKit.box(body, Vector3(2.60, 0.72, 4.50), Vector3(0.0, 0.98, 0.0), paint)
 	MeshKit.box(body, Vector3(2.74, 0.20, 4.20), Vector3(0.0, 1.36, 0.05), dark)
@@ -111,7 +112,7 @@ static func _tank(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	return {"root": root, "body": body, "turret": turret, "muzzle": muzzle, "wheels": []}
 
 static func _missile_tank(root: Node3D, paint, dark, metal, glow) -> Dictionary:
-	_tracks(root, paint, dark)
+	_tracks(root, dark)
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
 	MeshKit.box(body, Vector3(2.40, 0.66, 4.20), Vector3(0.0, 0.96, 0.0), paint)
 	MeshKit.box(body, Vector3(2.54, 0.18, 3.90), Vector3(0.0, 1.30, 0.05), dark)

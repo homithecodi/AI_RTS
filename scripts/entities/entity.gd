@@ -12,9 +12,6 @@ var max_hp: float = 100.0
 var dead: bool = false
 var world: GameWorld = null
 var selected: bool = false
-var last_attacker: Entity = null
-var last_hit_time: float = -999.0
-var damage_logged: float = 0.0
 
 var _hp_bar: Node3D = null
 var _hp_fill: MeshInstance3D = null
@@ -29,16 +26,9 @@ func setup(d: Dictionary, in_team: int, w: Node3D) -> void:
 	world = w
 	max_hp = float(d.get("hp", 100.0))
 	hp = max_hp
-	damage_logged = 0.0
 
 func display_name() -> String:
 	return String(def.get("name", def_id))
-
-func is_enemy_to(other: Entity) -> bool:
-	return other != null and other.team != team
-
-func faction() -> Faction:
-	return Game.faction(team)
 
 func aim_height() -> float:
 	return float(def.get("height", 2.0)) * 0.45
@@ -58,10 +48,7 @@ func take_damage(amount: float, by_team: int, source: Entity = null) -> void:
 	if not is_instance_valid(source):
 		source = null
 	hp -= amount
-	damage_logged += amount
-	last_hit_time = Game.elapsed
 	if source != null and source.team != team:
-		last_attacker = source
 		on_damaged(source)
 	var victim := Game.faction(team)
 	if victim != null:
@@ -75,12 +62,14 @@ func take_damage(amount: float, by_team: int, source: Entity = null) -> void:
 func on_damaged(_source: Entity) -> void:
 	pass
 
-func heal(amount: float) -> void:
-	hp = minf(max_hp, hp + amount)
-
 func die(killer: Entity = null) -> void:
 	if dead:
 		return
+	_finish_death(killer)
+
+# Shared teardown for every damageable. Subclasses add their own death effects
+# and then call this, so the bookkeeping lives in one place.
+func _finish_death(killer: Entity) -> void:
 	dead = true
 	set_selected(false)
 	visible = false
@@ -138,7 +127,7 @@ func set_selected(value: bool) -> void:
 	if _sel_ring != null:
 		_sel_ring.visible = value
 
-func _update_overlay(delta: float) -> void:
+func _update_overlay() -> void:
 	if _hp_bar == null:
 		return
 	var frac := clampf(hp / maxf(max_hp, 1.0), 0.0, 1.0)

@@ -100,10 +100,6 @@ func _unit_count(def_id: String) -> int:
 			n += 1
 	return n
 
-func _total_units() -> int:
-	var f := Game.faction(team)
-	return 0 if f == null else f.units.size()
-
 # --- base building -------------------------------------------------------
 func _build_structure() -> void:
 	var f := Game.faction(team)

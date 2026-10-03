@@ -339,13 +339,6 @@ func nearest_enemy_structure(pos: Vector3, team: int) -> Building:
 			best = b
 	return best
 
-func friendly_buildings_near(pos: Vector3, team: int, radius: float) -> Array:
-	var out: Array = []
-	for b in buildings:
-		if b.team == team and not b.dead and b.global_position.distance_to(pos) <= radius:
-			out.append(b)
-	return out
-
 func splash_damage(center: Vector3, radius: float, damage: float, team: int,
 		source: Entity) -> void:
 	for u: Unit in query_units(center, radius):
@@ -404,10 +397,3 @@ func can_place(building_id: String, pos: Vector3, team: int) -> Dictionary:
 func clamp_to_map(p: Vector3) -> Vector3:
 	var h := map_half() - 6.0
 	return Vector3(clampf(p.x, -h, h), 0.0, clampf(p.z, -h, h))
-
-func total_ore() -> float:
-	var total := 0.0
-	for n in ore_nodes:
-		if is_instance_valid(n):
-			total += n.amount
-	return total

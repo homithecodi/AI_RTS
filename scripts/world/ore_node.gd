@@ -39,9 +39,6 @@ func _build() -> void:
 		_base_scale.append(Vector3.ONE)
 	_bob_phase = rng.randf() * TAU
 
-func remaining_fraction() -> float:
-	return clampf(amount / max_amount, 0.0, 1.0)
-
 func take(ore: float) -> float:
 	var got := minf(amount, ore)
 	amount -= got
