@@ -1,4 +1,4 @@
-# Generals
+# RTS Game Mady by AI
 
 A small real-time-strategy game in Godot 4 (GDScript). You command a blue base on
 one corner of a procedural map, build an economy out of ore refineries, and destroy
@@ -21,21 +21,21 @@ Every script reaches shared state through it.
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| `W A S D` / arrows | pan the camera |
-| Mouse to screen edge | pan |
-| `Q` / `E`, middle-drag | rotate the camera |
-| Wheel, `+` / `-` | zoom (also tilts) |
-| `Home` | centre on the last event |
-| Left click | select, or place a structure / set a rally point |
-| Right click | move / attack-move; cancels placement |
-| Drag box | select units |
-| `F` | arm attack-move for the next order |
-| `X` | stop |
-| `H` | select all combat units |
-| `1` / `2` | assign / recall control group |
-| `Space`, `[` / `]` | pause, game speed |
+| Input                  | Action                                           |
+| ---------------------- | ------------------------------------------------ |
+| `W A S D` / arrows     | pan the camera                                   |
+| Mouse to screen edge   | pan                                              |
+| `Q` / `E`, middle-drag | rotate the camera                                |
+| Wheel, `+` / `-`       | zoom (also tilts)                                |
+| `Home`                 | centre on the last event                         |
+| Left click             | select, or place a structure / set a rally point |
+| Right click            | move / attack-move; cancels placement            |
+| Drag box               | select units                                     |
+| `F`                    | arm attack-move for the next order               |
+| `X`                    | stop                                             |
+| `H`                    | select all combat units                          |
+| `1` / `2`              | assign / recall control group                    |
+| `Space`, `[` / `]`     | pause, game speed                                |
 
 The bindings are registered in code by `Defs.setup_input()`, not in the project
 settings, so they are identical on every machine.
@@ -145,11 +145,11 @@ These are Godot behaviours, not project rules, but they shaped the code:
   the position is a radial billboard: every bar swings by a different amount as the
   camera pans, which looks like the bars are wriggling.
 - **Triangle winding.** Godot treats a triangle as front-facing when its geometric
-  normal points *away* from the viewer. An upward-facing quad must therefore be wound
+  normal points _away_ from the viewer. An upward-facing quad must therefore be wound
   `a,b,c` — the opposite of the OpenGL habit. `Terrain._build_mesh()` is written
   that way deliberately.
 - **`is` and property access on a freed object do not return null**, they raise
-  `previously freed` errors. Check `is_instance_valid()` *before* the type test, not
+  `previously freed` errors. Check `is_instance_valid()` _before_ the type test, not
   after — the type test is itself the thing that blows up.
 - **`Node3D.velocity` does not exist** outside physics bodies; read the unit's own
   `velocity`.
