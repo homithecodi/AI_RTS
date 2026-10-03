@@ -283,7 +283,10 @@ func _apply(delta: float) -> void:
 		if speed_len > 0.2:
 			_wheel_spin += speed_len * delta / 0.42
 		for w in wheels:
-			w.rotation.y = _wheel_spin
+			# MeshKit.wheel builds a cylinder whose axis ends up along local X
+			# (it is rotated PI/2 about Z), so the wheel rolls about X. Spinning
+			# about Y would swing the axle around instead of turning the wheel.
+			w.rotation.x = _wheel_spin
 	elif body != null and body != turret:
 		_bob += speed_len * delta * 2.2
 		var amp := clampf(speed_len / maxf(speed(), 0.1), 0.0, 1.0) * 0.07

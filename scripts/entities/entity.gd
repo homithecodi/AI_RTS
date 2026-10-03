@@ -159,7 +159,9 @@ func _update_overlay(delta: float) -> void:
 		_hp_fill_mat.albedo_color = Color(0.95, 0.25, 0.18)
 
 # Yaw-only billboard so the bar's local +X stays screen-right, which is what the
-# left-anchored fill offset above assumes.
+# left-anchored fill offset above assumes. The aim has to be expressed in the
+# parent's frame: structures carry their heading on their own rotation.y, so a
+# world yaw assigned straight to rotation.y would be added to that heading.
 func _face_camera() -> void:
 	var vp := get_viewport()
 	if vp == null:
@@ -171,4 +173,12 @@ func _face_camera() -> void:
 	to_cam.y = 0.0
 	if to_cam.length_squared() < 0.0001:
 		return
-	_hp_bar.rotation.y = atan2(to_cam.x, to_cam.z)
+	var parent := _hp_bar.get_parent() as Node3D
+	if parent == null:
+		_hp_bar.rotation.y = atan2(to_cam.x, to_cam.z)
+		return
+	var local := parent.global_transform.basis.inverse() * to_cam
+	local.y = 0.0
+	if local.length_squared() < 0.000001:
+		return
+	_hp_bar.rotation.y = atan2(local.x, local.z)
