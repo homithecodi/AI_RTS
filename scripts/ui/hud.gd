@@ -1,5 +1,18 @@
 class_name HUD
 extends CanvasLayer
+# All 2D interface: resource bar, minimap, build menu, selection and production
+# panels, the message log, and the victory overlay.
+#
+# The HUD is built entirely in code (see _build_ui) and is a pure observer: it reads
+# world and faction state and never mutates it. Player actions go through
+# PlayerController, and the only two things the HUD changes are its own widgets.
+#
+# Refreshes are split by cost. The resource bar runs on the 10 Hz signal from Game,
+# while the selection and production panels are rebuilt on demand because they
+# allocate controls.
+#
+# PROCESS_MODE_ALWAYS is set on the root so the interface keeps updating while the
+# tree is paused.
 
 const BUILD_ORDER := ["power_plant", "refinery", "barracks", "war_factory",
 	"defense_tower"]
@@ -41,6 +54,7 @@ func setup(w: GameWorld, cam: RTSCamera, ctrl: PlayerController,
 	controller = ctrl
 	ai = enemy_ai
 	_build_ui()
+	# Game signals drive the readouts; the controller and AI signals feed the log.
 	Game.resources_changed.connect(_on_resources_changed)
 	Game.selection_changed.connect(_refresh_selection)
 	Game.game_over.connect(_on_game_over)
@@ -52,6 +66,9 @@ func setup(w: GameWorld, cam: RTSCamera, ctrl: PlayerController,
 	_on_status("Left click selects, right click orders. F = attack-move, X = stop.")
 
 # --- construction --------------------------------------------------------
+## Build the widget tree. Kept in one place and entirely procedural: there is no .tscn
+## for the interface, which keeps the layout and the code that drives it in the same
+## file.
 func _build_ui() -> void:
 	root = Control.new()
 	root.name = "Root"
@@ -325,6 +342,10 @@ func _restart() -> void:
 	get_tree().reload_current_scene()
 
 # --- refresh -------------------------------------------------------------
+# Three cadences, cheapest first:
+#   every frame   the speed readout, the placement warning, ageing messages
+#   10 Hz         the top bar, driven by Game.resources_changed
+#   4 Hz + events  the production and selection panels, which allocate controls
 func _process(_delta: float) -> void:
 	if speed_label != null:
 		var s := "%s   %s   [ ] speed" % ["%dx" % int(round(Game.game_speed * 10.0) / 10.0),
@@ -347,6 +368,7 @@ func _process(_delta: float) -> void:
 func _on_resources_changed(_team: int) -> void:
 	_refresh_top()
 
+## Rebuild the resource strip: ore, income, the power gauge and the army count.
 func _refresh_top() -> void:
 	var f := Game.faction(Defs.TEAM_PLAYER)
 	if f == null:
@@ -372,10 +394,17 @@ func _refresh_top() -> void:
 	else:
 		warn_label.text = ""
 
+## Rebuild both selection-driven panels at once. Fired by Game.selection_changed and
+## whenever a producer is picked or dropped.
 func _refresh_selection() -> void:
 	_refresh_production()
 	_refresh_selection_panel()
 
+## Details for the current selection: a stat block for one entity, or a summary with
+## counts by type for several.
+##
+## Selection is read through controller.live_selection(), which drops entities freed
+## earlier in the frame, so this never touches a destroyed unit.
 func _refresh_selection_panel() -> void:
 	_clear(sel_box)
 	var sel := controller.live_selection()
@@ -435,6 +464,8 @@ func _refresh_selection_panel() -> void:
 			if cols >= 4:
 				break
 
+## Production queue for up to two selected producers: their build buttons, and the
+## entries already queued with a cancel button each.
 func _refresh_production() -> void:
 	_clear(prod_box)
 	var producers: Array[Building] = []
@@ -525,6 +556,8 @@ func _progress_bar(value: float, max_value: float, size: Vector2) -> ProgressBar
 	return pb
 
 # --- build menu ----------------------------------------------------------
+## Build button handler. Clicking the structure already being placed toggles
+## placement off, which is the quickest way to cancel.
 func _on_build_pressed(id: String) -> void:
 	var f := Game.faction(Defs.TEAM_PLAYER)
 	var cost := float(Defs.building_def(id).get("cost", 0))
@@ -544,6 +577,9 @@ func _on_ai_status(text: String) -> void:
 func _on_status(text: String, team: int = Defs.TEAM_PLAYER) -> void:
 	notify(text, team)
 
+# --- message log ---------------------------------------------------------
+## Push a message to the front of the log. The list is capped at eight so it cannot
+## grow without bound during a long match.
 func notify(text: String, team: int = Defs.TEAM_PLAYER) -> void:
 	var color := Defs.team_color(team).lerp(Color.WHITE, 0.35)
 	_messages.push_front({"text": text, "color": color, "life": 9.0})
@@ -556,6 +592,8 @@ func _rebuild_log() -> void:
 	for m in _messages:
 		event_log.add_child(_label(String(m["text"]), 12, m["color"]))
 
+## Age the messages and drop the expired ones. Only rebuilds the widgets when
+## something actually expired.
 func _age_messages() -> void:
 	var changed := false
 	for m in _messages:
@@ -567,6 +605,7 @@ func _age_messages() -> void:
 			return float(m["life"]) > 0.0)
 		_rebuild_log()
 
+## Show the end-of-match overlay, coloured by outcome.
 func _on_game_over(win: int) -> void:
 	overlay.visible = true
 	if win == Defs.TEAM_PLAYER:

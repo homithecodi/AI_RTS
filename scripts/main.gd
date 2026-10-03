@@ -1,6 +1,13 @@
 extends Node3D
-# Assembles the environment, the battlefield, the camera rig, the player
-# controller, the enemy AI and the HUD.
+# Composition root: builds the environment, the battlefield, the camera rig, the
+# player controller, the enemy AI and the HUD, then starts the match.
+#
+# This is the only script that knows about all the others. Everything below it talks
+# through GameWorld, Game and the signals between them, so nothing here is needed to
+# understand how the game behaves — only how it is wired together.
+#
+# The two exported values are the tuning surface for a designer; everything else is
+# set from scripts/core/defs.gd.
 
 var world: GameWorld
 var camera: RTSCamera
@@ -11,6 +18,8 @@ var hud: HUD
 @export var map_seed: int = 20260101
 @export var ai_difficulty: float = 1.0
 
+## Build order matters: the world has to exist before anything that queries it, and
+## the HUD comes last because it subscribes to signals from all of the above.
 func _ready() -> void:
 	_setup_environment()
 	_setup_world()
@@ -20,6 +29,8 @@ func _ready() -> void:
 	world.start()
 	_push_intro_messages()
 
+## Sky, sun and fog. The fog density is tuned so the far edge of the map fades out
+## rather than ending abruptly at the heightfield boundary.
 func _setup_environment() -> void:
 	var env := WorldEnvironment.new()
 	env.name = "WorldEnvironment"
@@ -70,6 +81,8 @@ func _setup_environment() -> void:
 	fill.shadow_enabled = false
 	add_child(fill)
 
+## Generate the map and place both starting bases. The bases go in after the terrain
+## exists, because they level the ground and need the heightfield to sample.
 func _setup_world() -> void:
 	world = GameWorld.new()
 	world.name = "World"
@@ -78,6 +91,8 @@ func _setup_world() -> void:
 	world.spawn_starting_base(Defs.TEAM_PLAYER)
 	world.spawn_starting_base(Defs.TEAM_ENEMY)
 
+## The rig starts behind the player's base looking towards the middle of the map, so
+## both your own base and the enemy are in front of the camera.
 func _setup_camera() -> void:
 	camera = RTSCamera.new()
 	camera.name = "CameraRig"
@@ -104,6 +119,8 @@ func _setup_hud() -> void:
 	hud.setup(world, camera, controller, ai)
 	hud.minimap.setup(world, camera, controller)
 
+## Global shortcuts only. Anything contextual (selection, orders, placement) belongs
+## to PlayerController, which needs the world and the camera to interpret it.
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var ev := event as InputEventKey

@@ -1,5 +1,17 @@
 class_name Terrain
 extends MeshInstance3D
+# Procedural heightfield: generation, mesh, raycasting and the minimap texture.
+#
+# The map is a fixed-size square (MAP_SIZE world units) sampled on a uniform GRID.
+# Heights are generated once into a PackedFloat32Array and bilinearly interpolated by
+# height_at(); nothing else mutates them afterwards except flatten zones, which are
+# applied during generate() before the mesh is built.
+#
+# Two coordinate conventions live here:
+#   * The minimap compass: +X is east and +Z is north, so world_to_map() puts +Z at
+#     the top of the map. build_minimap_texture() must use the same mapping.
+#   * Triangle winding: Godot treats a triangle as front-facing when its geometric
+#     normal points away from the viewer, so an upward-facing quad is wound a-b-c.
 
 const MAP_SIZE := 420.0
 const GRID := 168
@@ -15,6 +27,15 @@ var minimap_texture: ImageTexture = null
 func _init() -> void:
 	_heights.resize((GRID + 1) * (GRID + 1))
 
+## Build the heightfield and the render mesh.
+##
+## Two noise layers are combined: a low-frequency roll that decides where the hills
+## and basins are, and a higher-frequency field for surface detail. flatten_zones is
+## a list of {pos: Vector2, radius, height, falloff} dictionaries used to level the
+## ground under each base so structures do not float.
+##
+## _patch is derived from the seed and reused later as the noise seed for the vertex
+## colours and the minimap texture, so the map looks consistent between them.
 func generate(map_seed: int, flatten_zones: Array[Dictionary]) -> void:
 	_flatten = flatten_zones.duplicate()
 
@@ -51,6 +72,8 @@ func generate(map_seed: int, flatten_zones: Array[Dictionary]) -> void:
 
 	_build_mesh()
 
+## Blend the heights inside a zone towards a target height, with a smooth falloff so
+## the transition does not show as a crease.
 func _apply_flatten(zone: Dictionary) -> void:
 	var center: Vector2 = zone["pos"]
 	var radius: float = zone["radius"]
@@ -75,6 +98,8 @@ func _apply_flatten(zone: Dictionary) -> void:
 			var idx := gz * (GRID + 1) + gx
 			_heights[idx] = lerpf(_heights[idx], target, t)
 
+## Bilinearly interpolated ground height. Coordinates are clamped to the map, so
+## callers never have to bounds-check before asking.
 func height_at(x: float, z: float) -> float:
 	var fx := clampf((x + _half) / STEP, 0.0, float(GRID))
 	var fz := clampf((z + _half) / STEP, 0.0, float(GRID))
@@ -91,6 +116,7 @@ func height_at(x: float, z: float) -> float:
 	var h11 := _heights[(iz + 1) * row + ix + 1]
 	return lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
 
+## Surface normal from central differences over one grid step.
 func normal_at(x: float, z: float) -> Vector3:
 	var d := STEP
 	var hl := height_at(x - d, z)
@@ -99,12 +125,18 @@ func normal_at(x: float, z: float) -> Vector3:
 	var hu := height_at(x, z + d)
 	return Vector3(hl - hr, 2.0 * d, hd - hu).normalized()
 
+## 0 on flat ground, approaching 1 on a vertical face. Used to colour cliffs and to
+## reject building sites.
 func slope_at(x: float, z: float) -> float:
 	return 1.0 - normal_at(x, z).y
 
+## True while the coordinate is far enough inside the map to keep entities clear of
+## the edge.
 func in_bounds(x: float, z: float) -> bool:
 	return absf(x) <= _half - 6.0 and absf(z) <= _half - 6.0
 
+## Vertex colour for a point on the surface: grass blended by a patch noise, dirt by
+## a detail noise, with rock on slopes and at altitude and sand below sea level.
 func build_color(pos: Vector3, slope: float, patch: float, detail: float) -> Color:
 	var grass_a := Color(0.255, 0.404, 0.196)
 	var grass_b := Color(0.352, 0.451, 0.223)
@@ -121,6 +153,8 @@ func build_color(pos: Vector3, slope: float, patch: float, detail: float) -> Col
 	c = c.lerp(rock * 0.75, clampf((pos.y - 8.0) / 8.0, 0.0, 1.0) * 0.6)
 	return c
 
+## Build the render mesh from the heightfield. Vertex colours are sampled from the
+## same two noise instances used by the minimap so both views agree.
 func _build_mesh() -> void:
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
@@ -188,6 +222,10 @@ func terrain_material() -> StandardMaterial3D:
 	return mat
 
 # Ray march against the heightfield. Returns {point, normal} or an empty dict.
+#
+# Used for picking: the camera unprojects a screen point to a ray, and the march
+# finds where it crosses the ground. The step grows with distance so distant terrain
+# stays cheap, and an early-out skips the march once a ray has clearly left the map.
 func raycast(origin: Vector3, dir: Vector3, max_dist: float = 1200.0) -> Dictionary:
 	var t := 0.0
 	var step := 3.0
@@ -218,7 +256,13 @@ func raycast(origin: Vector3, dir: Vector3, max_dist: float = 1200.0) -> Diction
 		step = minf(step * 1.12, 9.0)
 	return {}
 
-func build_minmap_texture(size: int) -> ImageTexture:
+## Render the whole map to one image for the minimap: a single height sample plus one
+## hill-shading term per texel, cached for the lifetime of the match.
+##
+## The row-to-world mapping mirrors world_to_map(): row 0 is the top of the map,
+## which is +z (north). Change one and you must change the other, or the texture and
+## the markers drawn on top of it will disagree.
+func build_minimap_texture(size: int) -> ImageTexture:
 	var img := Image.create(size, size, false, Image.FORMAT_RGB8)
 	var pn := FastNoiseLite.new()
 	pn.seed = int(_patch)
@@ -249,12 +293,17 @@ func build_minmap_texture(size: int) -> ImageTexture:
 # Minimap orientation: +x is east and +z is north, which is the compass the rest
 # of the game describes itself in (the enemy base is +x,+z, i.e. north-east).
 # So world_to_map has to put +z at the TOP of the map, not the bottom.
+
+## World position to minimap UV, clamped to the map. v is flipped relative to z
+## because +z points up the map.
 func world_to_map(x: float, z: float) -> Vector2:
 	return Vector2(
 		clampf((x + _half) / MAP_SIZE, 0.0, 1.0),
 		clampf((_half - z) / MAP_SIZE, 0.0, 1.0)
 	)
 
+## Inverse of world_to_map(), returning the point on the ground. The y is sampled
+## from the heightfield so the result can be used directly as a camera focus.
 func map_to_world(u: float, v: float) -> Vector3:
 	var x := u * MAP_SIZE - _half
 	var z := _half - v * MAP_SIZE

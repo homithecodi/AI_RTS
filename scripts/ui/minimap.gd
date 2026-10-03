@@ -1,5 +1,17 @@
 class_name Minimap
 extends Control
+# Map overview in the corner: cached terrain image, live markers, and the camera's
+# view frustum.
+#
+# Orientation is fixed north-up and comes from Terrain.world_to_map(): +x is east and
+# +z is north. It does not follow the camera, so the frustum quad drawn in _draw() is
+# what ties the minimap to the current view.
+#
+# Redraws are coalesced into a 10 Hz tick in _process() rather than running every
+# frame, because _draw() repaints the whole control.
+#
+# Left click moves the camera. The click position is converted through map_to_world(),
+# the exact inverse of world_to_map(), so clicking a marker lands on it.
 
 var world: GameWorld = null
 var camera: RTSCamera = null
@@ -24,6 +36,7 @@ func _process(delta: float) -> void:
 		_redraw_timer = 0.1
 		queue_redraw()
 
+## Left click recentres the camera, right click sends the current selection there.
 func _gui_input(event: InputEvent) -> void:
 	if world == null or camera == null:
 		return
@@ -39,17 +52,23 @@ func _gui_input(event: InputEvent) -> void:
 						controller.command_move(units, dest, false)
 						emit_status("Moving %d units" % units.size())
 
+## Forward a status line to the HUD through the controller, so the minimap does not
+## need a direct reference to it.
 func emit_status(text: String) -> void:
 	if controller != null:
 		controller.emit_status(text)
 
+## Minimap UV (0..1) to widget pixels.
 func _uv_to_local(uv: Vector2) -> Vector2:
 	return uv * size
 
+## Widget pixels back to a world position, clamped to the map.
 func _map_to_world(local_pos: Vector2) -> Vector3:
 	var uv := (local_pos / size).clamp(Vector2.ZERO, Vector2.ONE)
 	return world.terrain.map_to_world(uv.x, uv.y)
 
+# Painted back to front: terrain, then ore, structures, units, the camera frustum,
+# and finally the frame. The frustum is on top so it stays readable over a busy base.
 func _draw() -> void:
 	if world == null or world.terrain == null:
 		return
@@ -95,6 +114,11 @@ func _draw() -> void:
 	_draw_camera_frustum(rect)
 	draw_rect(rect, Color(0.05, 0.06, 0.05, 0.9), false, 2.0)
 
+## Outline the region the camera can currently see.
+##
+## The four screen corners are ray-cast onto the terrain and converted into minimap
+## space; the result is a quadrilateral rather than a rectangle because the projection
+## is perspective. The crosshair marks the focus point, which should sit inside it.
 func _draw_camera_frustum(rect: Rect2) -> void:
 	if camera == null or camera.camera == null:
 		return

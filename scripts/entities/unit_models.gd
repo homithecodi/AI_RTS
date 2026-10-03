@@ -1,5 +1,21 @@
 class_name UnitModels
 extends RefCounted
+# Procedural meshes for the units.
+#
+# build() returns a plain Dictionary rather than typed handles because each silhouette
+# exposes a different subset of them. Consumers (Unit) must cope with nulls:
+#
+#   root    Node3D   the node to parent under the unit
+#   body    Node3D   the part that bobs when walking; may be the same node as turret
+#   turret  Node3D   the part that aims; may be the same node as body
+#   muzzle  Node3D   empty marker where shots originate, or null
+#   wheels  Array    MeshInstance3Ds to roll, empty for infantry
+#
+# Materials come from MeshKit's cache, so one colour across models is one resource.
+# Anything that will be mutated per instance must use MeshKit.mat_unique() instead.
+#
+# Team identity is expressed twice: a tint on the armour and a glowing accent, so the
+# sides stay distinguishable in silhouette and at a distance.
 
 const COL_ARMOR := Color(0.29, 0.31, 0.34)
 const COL_DARK := Color(0.12, 0.13, 0.15)
@@ -23,10 +39,15 @@ static func build(unit_id: String, team: int) -> Dictionary:
 		"scout": return _scout(root, paint_m, dark_m, metal_m, glass_m)
 		"tank": return _tank(root, paint_m, dark_m, metal_m, team_glow)
 		"missile_tank": return _missile_tank(root, paint_m, dark_m, metal_m, team_glow)
+	# Unknown id: an empty but valid model, so the unit is still selectable and
+	# targetable rather than failing to spawn.
 	return {"root": root, "body": root, "turret": root, "muzzle": null, "wheels": []}
 
 # Every model below is authored facing local +Z, matching the yaw convention used
 # by Unit.facing: rotation.y = atan2(dir.x, dir.z).
+
+## Rifleman: torso, helmet, and a rifle held across the body at the right shoulder.
+## The whole model bobs and aims as one piece, so body and turret are the same node.
 static func _rifleman(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
 	MeshKit.box(body, Vector3(0.30, 0.92, 0.34), Vector3(-0.20, 0.46, 0.0), dark)
@@ -44,6 +65,8 @@ static func _rifleman(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	var muzzle := MeshKit.empty("Muzzle", Vector3(0.50, 1.34, 1.26), body)
 	return {"root": root, "body": body, "turret": body, "muzzle": muzzle, "wheels": []}
 
+## Rocketeer: a tube launcher carried over the shoulder, plus a backpack. The tube is
+## tilted up, so the model reads as indirect-fire at a glance.
 static func _rocketeer(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
 	MeshKit.box(body, Vector3(0.30, 0.90, 0.34), Vector3(-0.20, 0.45, 0.0), dark)
@@ -61,6 +84,8 @@ static func _rocketeer(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	var muzzle := MeshKit.empty("Muzzle", Vector3(0.53, 1.86, 1.18), body)
 	return {"root": root, "body": body, "turret": body, "muzzle": muzzle, "wheels": []}
 
+## Scout car: the only wheeled unit, so its wheels array drives the roll animation.
+## The turret is separate, letting it swing independently of the hull.
 static func _scout(root: Node3D, paint, dark, metal, glass) -> Dictionary:
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
 	var wheels: Array = []
@@ -84,6 +109,8 @@ static func _scout(root: Node3D, paint, dark, metal, glass) -> Dictionary:
 	var muzzle := MeshKit.empty("Muzzle", Vector3(0.0, 0.04, 1.36), turret)
 	return {"root": root, "body": body, "turret": turret, "muzzle": muzzle, "wheels": wheels}
 
+## Common track assembly for the two tank chassis. Shared so the two vehicles stay
+## visually consistent and only differ above the tracks.
 static func _tracks(root: Node3D, dark) -> void:
 	var plate := MeshKit.mat(Color(0.18, 0.19, 0.2), 0.75, 0.3)
 	for sx in [-1.0, 1.0]:
@@ -92,6 +119,8 @@ static func _tracks(root: Node3D, dark) -> void:
 			MeshKit.box(root, Vector3(0.78, 0.86, 0.16),
 				Vector3(sx * 1.52, 0.50, -1.9 + i * 0.95), plate)
 
+## Main battle tank: long low hull, big turret, and a barrel long enough to read the
+## muzzle offset even at gameplay zoom.
 static func _tank(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	_tracks(root, dark)
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)
@@ -111,6 +140,8 @@ static func _tank(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	var muzzle := MeshKit.empty("Muzzle", Vector3(0.0, 0.36, 3.30), turret)
 	return {"root": root, "body": body, "turret": turret, "muzzle": muzzle, "wheels": []}
 
+## Missile artillery: same chassis as the tank, but the turret carries tilted tubes
+## instead of a barrel, so the two are told apart at a glance.
 static func _missile_tank(root: Node3D, paint, dark, metal, glow) -> Dictionary:
 	_tracks(root, dark)
 	var body := MeshKit.empty("Body", Vector3.ZERO, root)

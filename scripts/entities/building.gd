@@ -1,5 +1,15 @@
 class_name Building
 extends Entity
+# A structure: something that sits still and does one job.
+#
+# Two families share this class:
+#   * producers (barracks, war factory) run a build queue and spawn units at the exit
+#     point
+#   * gatherers (ore refinery) drain nearby ore fields into the faction's income
+#   * defence towers are weapons, and use rotation.y as their aim reference
+#
+# `active` is the finished-construction flag; almost nothing works until it is true,
+# and the power grid and the production UI both key off it.
 
 var active: bool = false
 var build_progress: float = 0.0
@@ -21,6 +31,12 @@ const DEFAULT_RALLY_DIST := 10.0
 
 # The node must already be inside the tree before this runs: exit points and ore
 # gathering both need a valid global transform.
+## Build a structure from its id. This is the whole construction sequence in one
+## place, and it runs after the node has been added to the scene tree.
+##
+## `heading` is the yaw used for the model's facing and, for weapons, as the datum
+## the turret is measured against. `instant` skips the build-up animation and starts
+## the structure fully operational.
 func initialize(building_id: String, in_team: int, pos: Vector3, w: GameWorld,
 		heading: float, instant: bool) -> void:
 	var d := Defs.building_def(building_id).duplicate()
@@ -46,30 +62,38 @@ func _build_model() -> void:
 	muzzle = parts.get("muzzle")
 	add_child(model_root)
 
+## Circular radius used for spacing, placement checks and the selection ring.
 func footprint_radius() -> float:
 	return float(def.get("footprint", 6.0)) * 0.5
 
+## World position just outside the door, where finished units appear. Rotated by the
+## structure's heading.
 func exit_point() -> Vector3:
 	return global_position + _front_offset(float(def.get("size_z", 6.0)) * 0.5 + 4.0)
 
-# Where freshly produced units walk to, and the fallback whenever no rally point
-# has been set. The offset is rotated by the heading so it stays in front of the
-# structure's door instead of drifting sideways on a rotated one.
+## Where freshly produced units walk to, and the fallback whenever no rally point
+## has been set. The offset is rotated by the heading so it stays in front of the
+## structure's door instead of drifting sideways on a rotated one.
 func default_rally_point() -> Vector3:
 	return exit_point() + _front_offset(DEFAULT_RALLY_DIST)
 
 func _front_offset(distance: float) -> Vector3:
 	return Vector3(0.0, 0.0, distance).rotated(Vector3.UP, rotation.y)
 
+## Unit ids this structure can build, empty for everything else.
 func produces() -> Array:
 	return def.get("units", []) as Array
 
+## True when this structure could start building `unit_id` right now: finished, able
+## to build it, and the faction can pay for it.
 func can_queue(unit_id: String) -> bool:
 	if not active or not produces().has(unit_id):
 		return false
 	var f := Game.faction(team)
 	return f != null and f.can_afford(float(Defs.unit_def(unit_id).get("cost", 0)))
 
+## Add a unit to the build queue and pay for it up front. Refunds are handled by
+## cancel_queue_entry().
 func enqueue(unit_id: String) -> bool:
 	if not can_queue(unit_id):
 		return false
@@ -87,6 +111,8 @@ func enqueue(unit_id: String) -> bool:
 	})
 	return true
 
+## Refund and drop a queued entry. The refund is deliberately partial so cancelling
+## is a real decision rather than a free undo.
 func cancel_queue_entry(index: int) -> void:
 	if index < 0 or index >= queue.size():
 		return
@@ -101,6 +127,8 @@ func queue_head_id() -> String:
 		return ""
 	return String(queue[0]["id"])
 
+## Complete construction: become operational, pop the dust effect, claim nearby ore
+## fields, and re-register so the power grid picks the structure up.
 func finish_construction() -> void:
 	build_progress = 1.0
 	active = true
@@ -113,9 +141,11 @@ func finish_construction() -> void:
 	# Re-register so the power grid picks this structure up.
 	Game.register_building(self)
 
+## True for structures with a weapon (defence towers).
 func is_weapon() -> bool:
 	return def.has("range")
 
+# --- per-frame ------------------------------------------------------------
 func _process(delta: float) -> void:
 	if dead:
 		return
@@ -127,6 +157,7 @@ func _process(delta: float) -> void:
 		_tick_construction(delta)
 	_update_overlay()
 
+## Raise the model out of the ground over the structure's build time.
 func _tick_construction(delta: float) -> void:
 	if build_progress >= 1.0:
 		return
@@ -137,6 +168,8 @@ func _tick_construction(delta: float) -> void:
 	if build_progress >= 1.0:
 		finish_construction()
 
+## Advance the front of the build queue. A brownout slows production through
+## power_ratio() rather than stopping it.
 func _tick_queue(delta: float) -> void:
 	if queue.is_empty():
 		return
@@ -150,6 +183,11 @@ func _tick_queue(delta: float) -> void:
 		queue.remove_at(0)
 		_deliver(String(head["id"]))
 
+## Spawn the finished unit at the door and send it to the rally point.
+##
+## Units leave facing the structure's heading, so they march away from the door. The
+## rally point is reset if the player parked it on top of the building, which makes it
+## impossible to trap newly produced units.
 func _deliver(unit_id: String) -> void:
 	var exit := exit_point()
 	exit.y = world.terrain.height_at(exit.x, exit.z)
@@ -164,6 +202,8 @@ func _deliver(unit_id: String) -> void:
 	if rally_set and rally_point.distance_to(global_position) < 3.0:
 		rally_point = default_rally_point()
 
+## Grid slot for the n-th unit heading to the rally point, so a barracks does not
+## deliver its whole queue to the same spot.
 func _rally_slot(_u: Unit) -> Vector3:
 	var others := rally_members().size()
 	if others <= 1:
@@ -176,6 +216,8 @@ func _rally_slot(_u: Unit) -> Vector3:
 	return Vector3((float(col) - (float(cols) - 1.0) * 0.5) * spacing, 0.0,
 		float(row) * spacing * 0.8)
 
+## Units on their way to this structure's rally point. Used only to size the rally
+## grid, so it matches loosely (still heading there, roughly close).
 func rally_members() -> Array[Unit]:
 	var out: Array[Unit] = []
 	var f := Game.faction(team)
@@ -187,6 +229,8 @@ func rally_members() -> Array[Unit]:
 			out.append(u)
 	return out
 
+## Claim the ore fields this refinery will draw from, nearest first, capped by
+## max_nodes. Run once on completion; fields never move, so no re-scan is needed.
 func _collect_ore_nodes() -> void:
 	_ore_nodes.clear()
 	var radius := float(def.get("gather_radius", 50.0))
@@ -201,6 +245,8 @@ func _collect_ore_nodes() -> void:
 		if n.active:
 			_ore_nodes.append(n)
 
+## Drain the claimed ore fields and publish the per-second rate, which is what the
+## HUD shows and what Faction.tick_economy() banks.
 func _tick_income(delta: float) -> void:
 	if _ore_nodes.is_empty() or delta <= 0.0:
 		income = 0.0
@@ -213,6 +259,18 @@ func _tick_income(delta: float) -> void:
 		gained += n.take(rate * delta)
 	income = gained / delta
 
+## Turret behaviour. Target scanning is throttled to 4 Hz independently of firing, so
+## a field full of towers does not re-query every frame; the turret keeps tracking
+## between shots.
+##
+## The aim is converted from a world yaw into the structure's local frame, since the
+## turret hangs under a node that is already rotated by rotation.y.
+## Turret behaviour. Target scanning is throttled to 4 Hz independently of firing, so
+## a field full of towers does not re-query every frame; the turret keeps tracking
+## between shots.
+##
+## The aim is converted from a world yaw into the structure's local frame, since the
+## turret hangs under a node that is already rotated by rotation.y.
 func _tick_weapon(delta: float) -> void:
 	if not is_weapon() or turret == null:
 		return
@@ -237,6 +295,8 @@ func _tick_weapon(delta: float) -> void:
 	Effects.muzzle_flash(world.effects, muzzle_pos, Color(1.0, 0.7, 0.3), 1.3)
 	found.take_damage(dmg, team, self)
 
+## Big structure explosion: a central blast, a scorch mark and a wreck, plus two
+## offset fireballs so it does not read as a single sphere.
 func die(killer: Entity = null) -> void:
 	if dead:
 		return

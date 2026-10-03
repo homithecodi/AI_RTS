@@ -1,5 +1,12 @@
 class_name OreNode
 extends Node3D
+# A harvestable ore field: the bobbing crystals plus the remaining reserve that
+# refineries drain.
+#
+# The node owns its own depletion behaviour, so a refinery only has to check `active`
+# and call take(). pos_xz is kept separately from position because the minimap and
+# the AI both work in 2D, and because the crystal layout is seeded from it, which
+# makes the same field look identical every time the map is generated.
 
 var amount: float = Defs.ORE_PER_NODE
 var max_amount: float = Defs.ORE_PER_NODE
@@ -10,6 +17,8 @@ var _crystals: Array[MeshInstance3D] = []
 var _base_scale: Array[Vector3] = []
 var _bob_phase: float = 0.0
 
+## Build a field with the given reserve. The caller is responsible for placing it on
+## the terrain surface.
 static func create(p: Vector3, ore: float = Defs.ORE_PER_NODE) -> OreNode:
 	var n := OreNode.new()
 	n.max_amount = ore
@@ -19,6 +28,8 @@ static func create(p: Vector3, ore: float = Defs.ORE_PER_NODE) -> OreNode:
 	n._build()
 	return n
 
+## Scatter the crystals around the base plate. The seed is derived from the field
+## position rather than random, so a given map always produces the same layout.
 func _build() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(absf(pos_xz.x) * 71.0 + absf(pos_xz.y) * 137.0)
@@ -39,6 +50,8 @@ func _build() -> void:
 		_base_scale.append(Vector3.ONE)
 	_bob_phase = rng.randf() * TAU
 
+## Extract up to `ore` from the field and return what was actually available, which
+## is less than requested once the reserve runs low. Empties the field for good.
 func take(ore: float) -> float:
 	var got := minf(amount, ore)
 	amount -= got
@@ -51,6 +64,7 @@ func take(ore: float) -> float:
 			c.position.y *= 0.5
 	return got
 
+# Gentle pulse so a field reads as active at a distance. Stops entirely once spent.
 func _process(delta: float) -> void:
 	if not active:
 		return

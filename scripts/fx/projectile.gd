@@ -1,5 +1,11 @@
 class_name Projectile
 extends Node3D
+# A travelling shell, used by units with a "projectile" stat.
+#
+# The shell homes on a target's last known position, so a fast unit that moves after
+# being fired at is missed rather than followed. Both `target_entity` and `shooter`
+# can be freed while the shell is in the air (the target can die, the shooter can be
+# killed by return fire), so every use is guarded with is_instance_valid().
 
 var target_point: Vector3
 var target_entity: Entity = null
@@ -14,6 +20,8 @@ var _mesh: MeshInstance3D = null
 var _light: OmniLight3D = null
 var _life: float = 8.0
 
+## Launch a shell at `target`. Returns the node; the caller does not need to track it,
+## since _process() steers and frees it.
 static func fire(parent: Node3D, from: Vector3, target: Entity, dmg: float,
 		splash_radius: float, in_team: int, w: GameWorld,
 		from_entity: Entity) -> Projectile:
@@ -53,6 +61,7 @@ func _build() -> void:
 	_light.shadow_enabled = false
 	add_child(_light)
 
+## Steer towards the target and self-destruct on arrival or when the fuse runs out.
 func _process(delta: float) -> void:
 	_life -= delta
 	if _life <= 0.0:
@@ -70,6 +79,8 @@ func _process(delta: float) -> void:
 	if absf(to.normalized().dot(Vector3.UP)) < 0.999:
 		look_at(global_position + to, Vector3.UP)
 
+## Detonate: area damage if the unit has splash, otherwise a single hit if the
+## target is still standing.
 func _impact() -> void:
 	var parent := get_parent()
 	Effects.muzzle_flash(parent, global_position, color, 1.4)

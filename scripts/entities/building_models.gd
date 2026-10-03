@@ -28,9 +28,12 @@ static func build(building_id: String, team: int) -> Dictionary:
 		"defense_tower": return _defense_tower(root, paint_m, trim_m, dark_m, team_glow, metal)
 	return {"root": root, "turret": null, "muzzle": null, "beam": null}
 
+## Flat pad under a structure. Every building sits on one, which also hides the seam
+## where the model meets the terrain.
 static func _foundation(root: Node3D, sx: float, sz: float, trim) -> void:
 	MeshKit.box(root, Vector3(sx + 1.4, 0.35, sz + 1.4), Vector3(0, 0.17, 0), trim)
 
+## Power plant: a squat drum, distinguished by its glow band.
 static func _power_plant(root: Node3D, paint, trim, dark, glow, metal) -> Dictionary:
 	_foundation(root, 8.0, 8.0, trim)
 	MeshKit.box(root, Vector3(6.4, 2.4, 6.4), Vector3(0, 1.55, 0), paint)
@@ -44,6 +47,8 @@ static func _power_plant(root: Node3D, paint, trim, dark, glow, metal) -> Dictio
 	MeshKit.box(root, Vector3(4.4, 0.14, 0.14), Vector3(0, 3.05, -3.1), glow)
 	return {"root": root, "turret": null, "muzzle": null, "beam": null}
 
+## Ore refinery: two lit tanks and a ring of intake arms. Symmetrical, so its heading
+## is easy to read from the minimap.
 static func _refinery(root: Node3D, paint, trim, dark, glow, metal) -> Dictionary:
 	_foundation(root, 10.0, 10.0, trim)
 	MeshKit.box(root, Vector3(8.2, 1.0, 8.2), Vector3(0, 0.85, 0), paint)
@@ -63,6 +68,7 @@ static func _refinery(root: Node3D, paint, trim, dark, glow, metal) -> Dictionar
 	MeshKit.box(root, Vector3(8.0, 0.14, 0.14), Vector3(0, 1.45, 4.15), glow)
 	return {"root": root, "turret": null, "muzzle": null, "beam": null}
 
+## Barracks: the only infantry producer, with a roll-up door that recruits walk out of.
 static func _barracks(root: Node3D, paint, trim, dark, glass, glow, metal) -> Dictionary:
 	_foundation(root, 8.0, 7.0, trim)
 	MeshKit.box(root, Vector3(7.2, 3.2, 6.2), Vector3(0, 1.95, 0), paint)
@@ -76,6 +82,8 @@ static func _barracks(root: Node3D, paint, trim, dark, glass, glow, metal) -> Di
 	MeshKit.box(root, Vector3(1.6, 0.06, 0.06), Vector3(2.8, 5.4, -1.2), glow)
 	return {"root": root, "turret": null, "muzzle": null, "beam": null}
 
+## War factory: the largest footprint, with a crane over the door. The height also
+## puts its health bar clear of the model.
 static func _war_factory(root: Node3D, paint, trim, dark, glass, glow, metal) -> Dictionary:
 	_foundation(root, 12.0, 9.0, trim)
 	MeshKit.box(root, Vector3(10.6, 4.0, 8.2), Vector3(0, 2.35, 0), paint)
@@ -96,6 +104,8 @@ static func _war_factory(root: Node3D, paint, trim, dark, glass, glow, metal) ->
 	MeshKit.cyl(root, 0.55, 0.3, Vector3(4.6, 6.9, 2.6), glow)
 	return {"root": root, "turret": null, "muzzle": null, "beam": null}
 
+## Defence tower: the only armed structure, so it is the only one that returns a
+## turret and muzzle.
 static func _defense_tower(root: Node3D, paint, trim, dark, glow, metal) -> Dictionary:
 	MeshKit.cyl(root, 2.1, 1.0, Vector3(0, 0.5, 0), trim)
 	MeshKit.cyl(root, 1.5, 0.25, Vector3(0, 1.05, 0), glow)

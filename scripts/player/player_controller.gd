@@ -123,6 +123,7 @@ func _handle_key(ev: InputEventKey) -> void:
 			camera.focus_on(world.base_pos(Defs.TEAM_PLAYER))
 
 # --- selection -----------------------------------------------------------
+## Drag a box and keep the units that ended up inside it.
 func _finish_selection(screen_pos: Vector2) -> void:
 	var rect := box_rect()
 	var is_click := rect.size.length() < 7.0
@@ -143,6 +144,7 @@ func _finish_selection(screen_pos: Vector2) -> void:
 	else:
 		_box_select(rect)
 
+## Replace the selection. Only live player entities are accepted.
 func select(entities: Array) -> void:
 	for e in selection:
 		if is_instance_valid(e):
@@ -162,6 +164,8 @@ func clear_selection() -> void:
 	selection.clear()
 	Game.selection_changed.emit()
 
+## Same click twice selects every unit of that type on screen, the usual RTS
+## convenience for grabbing one squad out of a crowd.
 func _select_same_type_on_screen(e: Entity) -> void:
 	var out: Array = []
 	for other in world.query_units(camera.focus_point(), 120.0):
@@ -173,6 +177,7 @@ func _select_same_type_on_screen(e: Entity) -> void:
 		out.append(e)
 	select(out)
 
+## True when an entity is somewhere inside the active drag rectangle.
 func _on_screen(e: Entity) -> bool:
 	return camera.is_point_visible(e.center())
 
@@ -191,12 +196,15 @@ func _box_select(rect: Rect2) -> void:
 				out.append(b)
 	select(out)
 
+## The on-screen area of the current drag, or an empty rect when not dragging.
 func box_rect() -> Rect2:
 	var a := box_start
 	var b := box_current
 	return Rect2(Vector2(minf(a.x, b.x), minf(a.y, b.y)),
 		Vector2(absf(a.x - b.x), absf(a.y - b.y)))
 
+## What is under a screen position: units win over structures, and the closest wins
+## within each. Used for both selection and right-click orders.
 func pick_entity(screen_pos: Vector2) -> Entity:
 	var hit := camera.ray_to_ground(screen_pos)
 	if hit.is_empty():
@@ -253,6 +261,11 @@ func recall_group(index: int) -> void:
 	select(alive)
 
 # --- orders --------------------------------------------------------------
+## Turn a right click into an order for the current selection.
+##
+## Priority: complete a pending structure placement, then attack an enemy, then set a
+## rally point on a producer, and only otherwise move. That ordering is what lets the
+## same button serve every purpose without a modifier.
 func _issue_order(screen_pos: Vector2) -> void:
 	var hit := camera.ray_to_ground(screen_pos)
 	var units := selected_units()
@@ -359,6 +372,10 @@ func _issue_move(units: Array[Unit], dest: Vector3, attacking: bool) -> void:
 	emit_status(("Attack-move: %d units" % usable.size()) if attacking
 		else ("Moving %d units" % usable.size()))
 
+## Spread a group out behind the destination instead of sending it to one point.
+##
+## The formation is built perpendicular to the direction of travel, so it arrives
+## facing the right way, and the spacing scales with the largest unit in the group.
 func _formation_offsets(count: int, dir: Vector3, spacing: float) -> Array[Vector3]:
 	var out: Array[Vector3] = []
 	if count <= 1:
@@ -392,6 +409,9 @@ func begin_placement(building_id: String) -> void:
 	_set_ghost_material(ghost, true)
 	placement_changed.emit()
 
+## Heading for a newly placed structure. Structures follow the camera so the player
+## sees the front of what they just built, except the defence tower, which always
+## faces the enemy.
 func _best_facing(building_id: String) -> float:
 	var forward := Vector3(-sin(camera.yaw), 0, -cos(camera.yaw))
 	if String(building_id) == "defense_tower":
@@ -399,6 +419,8 @@ func _best_facing(building_id: String) -> float:
 		return atan2(enemy.x - camera.focus_point().x, enemy.z - camera.focus_point().z)
 	return atan2(forward.x, forward.z)
 
+## Recolour a ghosted structure: translucent while valid, red while the site is
+## blocked. Walks the whole model, so it works for any structure.
 func _set_ghost_material(node: Node, ghost_mode: bool) -> void:
 	for child in node.get_children():
 		if child is MeshInstance3D:
@@ -412,6 +434,8 @@ func _set_ghost_material(node: Node, ghost_mode: bool) -> void:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_set_ghost_material(child, ghost_mode)
 
+## Snap the ghost to the terrain under the cursor and revalidate it. Runs every frame
+## while placing, so the reason text and colour track the site as the mouse moves.
 func _update_ghost(screen_pos: Vector2) -> void:
 	var hit := camera.ray_to_ground(screen_pos)
 	if hit.is_empty():
@@ -427,6 +451,8 @@ func _update_ghost(screen_pos: Vector2) -> void:
 	ghost_reason = String(check["reason"])
 	_set_ghost_material(ghost, ghost_valid)
 
+## Commit the placement. Charges the faction only after can_place() has passed, and
+## gives the player feedback either way.
 func try_place(screen_pos: Vector2) -> void:
 	if placing_id == "":
 		return

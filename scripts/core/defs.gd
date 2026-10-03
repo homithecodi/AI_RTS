@@ -1,5 +1,19 @@
 class_name Defs
 extends RefCounted
+# Single source of truth for balance data and input bindings.
+#
+# Everything the designer would want to touch lives here: unit and structure stats,
+# team colours, starting resources, and the key bindings. No other script hard-codes
+# a cost, a hit point or a key.
+#
+# Stat conventions used throughout the codebase:
+#   * "power" is signed: positive generates, negative consumes.
+#   * "cost"/"build_time"/"hp"/"range"/"damage" are plain float seconds and units.
+#   * "splash" is a radius, and doubles as the flag for "area damage" (> 0.1).
+#   * "projectile" true means the unit fires a travelling shell instead of a hitscan
+#     tracer.
+#   * "size_x"/"size_z" are the footprint used for collision and the minimap;
+#     "footprint" is the circular radius used for spacing and placement checks.
 
 const TEAM_PLAYER := 0
 const TEAM_ENEMY := 1
@@ -8,8 +22,7 @@ const COL_PLAYER := Color(0.28, 0.62, 1.0)
 const COL_ENEMY := Color(0.98, 0.31, 0.22)
 const COL_NEUTRAL := Color(0.7, 0.7, 0.7)
 
-# Power balance note: positive = generated, negative = consumed.
-# Units ------------------------------------------------------------------
+# --- units ----------------------------------------------------------------
 const UNITS := {
 	"rifleman": {
 		"name": "Rifleman",
@@ -68,7 +81,7 @@ const UNITS := {
 	},
 }
 
-# Structures --------------------------------------------------------------
+# --- structures ----------------------------------------------------------
 const BUILDINGS := {
 	"power_plant": {
 		"name": "Power Plant",
@@ -112,13 +125,17 @@ const BUILDINGS := {
 	},
 }
 
+# --- economy --------------------------------------------------------------
 const START_ORE := 5000.0
 const AI_START_ORE := 4200.0
 const ORE_PER_NODE := 1600.0
 
+## Look up a unit definition. Returns an empty Dictionary for unknown ids, so
+## callers use .get() with their own defaults rather than indexing blindly.
 static func unit_def(id: String) -> Dictionary:
 	return UNITS.get(id, {})
 
+## Look up a structure definition. Same empty-dictionary fallback as unit_def().
 static func building_def(id: String) -> Dictionary:
 	return BUILDINGS.get(id, {})
 
@@ -136,6 +153,12 @@ static func team_name(team: int) -> String:
 		return "RED"
 	return "NEUTRAL"
 
+## Register the key bindings in code rather than in project settings so they behave
+## identically on every machine and keyboard layout. Physical keycodes are used, so
+## the bindings follow the physical key position rather than the user's layout.
+##
+## Safe to call more than once: existing actions are erased first, which is what
+## makes it usable from Game.reset_match().
 static func setup_input() -> void:
 	_action(&"cam_left", [KEY_A, KEY_LEFT])
 	_action(&"cam_right", [KEY_D, KEY_RIGHT])
@@ -156,6 +179,7 @@ static func setup_input() -> void:
 static func _action(action: StringName, keys: Array) -> void:
 	if InputMap.has_action(action):
 		InputMap.erase_action(action)
+	# 0.2s dead zone keeps a keypress from registering twice on key repeat.
 	InputMap.add_action(action, 0.2)
 	for k in keys:
 		var ev := InputEventKey.new()

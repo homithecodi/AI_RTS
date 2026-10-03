@@ -52,11 +52,17 @@ func setup(w: GameWorld, start_pos: Vector3) -> void:
 	yaw = atan2(start_pos.x, start_pos.z)
 	focus_on(start_pos)
 
+## Push the current yaw, pitch and distance onto the rig nodes.
+##
+## Nothing else writes to those nodes, and it is not called every frame: the pitch and
+## distance only change on input, and yaw only when rotating. Anything that sets
+## yaw/pitch/distance from code must call this or the change will not appear.
 func _apply() -> void:
 	yaw_node.rotation.y = yaw
 	pitch_node.rotation.x = pitch
 	camera.position = Vector3(0, 0, distance)
 
+## Move the focus point, clamped to the playable area and dropped onto the terrain.
 func focus_on(p: Vector3) -> void:
 	var clamped := _clamp(p)
 	focus.position = clamped
@@ -91,6 +97,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		pitch = clampf(pitch - delta.y * 0.005, MIN_PITCH, MAX_PITCH)
 		_apply()
 
+## Zoom, which also tilts the camera towards a steeper angle. Zooming out flattens
+## the view to show more of the map; zooming in tilts down for a close view.
 func _zoom(direction: float) -> void:
 	distance = clampf(distance * (1.0 + direction * 0.12), MIN_DIST, MAX_DIST)
 	pitch = clampf(lerpf(pitch, -0.95, 0.14 * absf(direction)), MIN_PITCH, MAX_PITCH)
@@ -153,16 +161,21 @@ func _edge_delta() -> Vector3:
 	return (right * dir.x + forward * dir.y).normalized()
 
 # --- picking helpers -----------------------------------------------------
+## Screen position to the ground point under it, for picking. Returns an empty
+## dictionary when the ray misses the terrain (pointing at the sky).
 func ray_to_ground(screen_pos: Vector2) -> Dictionary:
 	if world == null or world.terrain == null:
 		return {}
 	return world.terrain.raycast(camera.project_ray_origin(screen_pos),
 		camera.project_ray_normal(screen_pos))
 
+## Screen position for a world point, or (0,0) when it is behind the camera.
 func project_ground(p: Vector3) -> Vector2:
 	return camera.unproject_position(p)
 
 # True when a world point is both in front of the camera and inside the view.
+## True when a world point falls inside the viewport, used to cull off-screen units
+## during box selection.
 func is_point_visible(p: Vector3) -> bool:
 	var xf := camera.global_transform
 	if xf.basis.z.dot(p - xf.origin) >= 0.0:

@@ -7,6 +7,9 @@ extends Entity
 
 enum Order { NONE, MOVE, ATTACK, ATTACK_MOVE }
 
+# Order is the player's intent; target is whatever the unit decided to shoot back.
+# NONE means idle (and defending itself), MOVE means go to move_target and ignore
+# enemies, ATTACK means stay near target, ATTACK_MOVE is MOVE but fights on the way.
 var velocity := Vector3.ZERO
 var move_target := Vector3.ZERO
 var slot := Vector3.ZERO
@@ -15,6 +18,8 @@ var target: Entity = null
 var facing: float = 0.0
 var cooldown: float = 0.0
 
+# Model handles, resolved by UnitModels.build(). body and turret can be the same
+# node (infantry), and muzzle may be null, in which case shots start at center().
 var model_root: Node3D = null
 var body: Node3D = null
 var turret: Node3D = null
@@ -31,6 +36,8 @@ var _spawn_credit: float = 0.55
 const SEPARATION := 2.6
 const BUILDING_CLEARANCE := 1.8
 
+## Factory rather than a constructor: the node is fully built before it enters the
+## tree, so nothing it creates ever sees an unparented node.
 static func spawn(unit_id: String, in_team: int, pos: Vector3, w: Node3D,
 		heading: float = 0.0) -> Unit:
 	var u := Unit.new()
@@ -56,9 +63,11 @@ func _build_model() -> void:
 	add_child(model_root)
 	model_root.rotation.y = facing
 
+## Collision radius, also the spacing used by formations and separation.
 func radius() -> float:
 	return float(def.get("radius", 1.0))
 
+## Current speed in units per second, already reduced by a power brownout.
 func speed() -> float:
 	var s := float(def.get("speed", 5.0))
 	var f := Game.faction(team)
@@ -69,9 +78,12 @@ func speed() -> float:
 func attack_range() -> float:
 	return float(def.get("range", 10.0))
 
+## How far the unit looks for something to shoot on its own.
 func sight() -> float:
 	return float(def.get("sight", 30.0))
 
+## Slightly lower than the entity default: units are tracked around their middle so
+## tracers do not sail over infantry.
 func aim_height() -> float:
 	return float(def.get("height", 2.0)) * 0.42
 
@@ -79,6 +91,8 @@ func is_moving() -> bool:
 	return Vector2(velocity.x, velocity.z).length_squared() > 0.5
 
 # --- orders --------------------------------------------------------------
+## Walk to a world point. `new_slot` is a formation offset in the caller's frame,
+# assigned by PlayerController._formation_offsets().
 func order_move(dest: Vector3, new_slot: Vector3 = Vector3.ZERO) -> void:
 	move_target = Vector3(dest.x, global_position.y, dest.z)
 	slot = new_slot
@@ -86,12 +100,14 @@ func order_move(dest: Vector3, new_slot: Vector3 = Vector3.ZERO) -> void:
 	target = null
 	cooldown = minf(cooldown, 0.25)
 
+## Walk to a point but engage anything met on the way.
 func order_attack_move(dest: Vector3, new_slot: Vector3 = Vector3.ZERO) -> void:
 	move_target = Vector3(dest.x, global_position.y, dest.z)
 	slot = new_slot
 	order_mode = Order.ATTACK_MOVE
 	target = null
 
+## Focus a specific target, moving to within weapon range.
 func order_attack(t: Entity) -> void:
 	order_mode = Order.ATTACK
 	target = t
@@ -102,6 +118,7 @@ func order_stop() -> void:
 	target = null
 	velocity = Vector3.ZERO
 
+## Being shot at while idle makes the unit fight back.
 func on_damaged(source: Entity) -> void:
 	if source == null or dead or source.team == team:
 		return
@@ -110,6 +127,9 @@ func on_damaged(source: Entity) -> void:
 		target = source
 
 # --- main loop -----------------------------------------------------------
+# Three separate passes, in this order: decide, move, then present. Keeping them
+# apart means movement never reads a half-updated facing, and presentation can be
+# skipped without affecting simulation.
 func _physics_process(delta: float) -> void:
 	if dead:
 		return
@@ -117,6 +137,8 @@ func _physics_process(delta: float) -> void:
 	_move(delta)
 	_apply(delta)
 
+## Target selection and firing. Retargeting is on a randomised timer so a crowd does
+# not re-query on the same frame.
 func _think(delta: float) -> void:
 	if target != null and (target.dead or not is_instance_valid(target)):
 		target = null
@@ -133,6 +155,9 @@ func _think(delta: float) -> void:
 	if target != null and cooldown <= 0.0 and distance_to(target) <= attack_range():
 		_fire(target)
 
+## Pick something to shoot, within a radius that depends on what the unit was told to
+## do. An idle unit keeps a short leash so it defends its position rather than
+## wandering off.
 func _acquire_target() -> void:
 	var scan := sight()
 	match order_mode:
@@ -146,6 +171,9 @@ func _acquire_target() -> void:
 	if found != null:
 		target = found
 
+## Fire at a target. Units with a "projectile" stat launch a travelling shell;
+## everything else is hitscan, drawn as a tracer so the player can still read where
+## the shot came from.
 func _fire(t: Entity) -> void:
 	cooldown = float(def.get("cooldown", 1.0))
 	var dmg := float(def.get("damage", 10.0)) * _damage_vs(t)
@@ -163,6 +191,9 @@ func _fire(t: Entity) -> void:
 		Effects.muzzle_flash(world.effects, muzzle_pos, flash, size)
 		_apply_damage(t, dmg)
 
+## Route one hit, either as area damage around the target or straight onto it. The
+## attacker is always `self`, which is what the damage statistics and kill credit are
+## attributed to.
 func _apply_damage(t: Entity, dmg: float) -> void:
 	var splash := float(def.get("splash", 0.0))
 	if splash > 0.1:
@@ -170,6 +201,8 @@ func _apply_damage(t: Entity, dmg: float) -> void:
 	else:
 		t.take_damage(dmg, team, self)
 
+## Damage multiplier from the "vs_" stats: infantry trade well against infantry and
+## badly against armour, and so on.
 func _damage_vs(t: Entity) -> float:
 	match String(t.def.get("kind", "")):
 		"vehicle":
@@ -179,6 +212,14 @@ func _damage_vs(t: Entity) -> float:
 	return 1.0
 
 # --- movement ------------------------------------------------------------
+# Steering is deliberately not a pathfinder. Units drive straight at their goal and
+# resolve conflicts by pushing apart, which is enough for the open maps here and keeps
+# movement cheap at a few hundred units.
+#
+# The resulting velocity is smoothed rather than applied directly, so units lean into
+# turns instead of snapping, and never exceed their top speed when forces combine.
+
+## Decide where the unit wants to be and build a desired velocity for it.
 func _move(delta: float) -> void:
 	var destination := global_position
 	var wants_to_go := false
@@ -221,9 +262,14 @@ func _move(delta: float) -> void:
 	if velocity.length_squared() < 0.01:
 		velocity = Vector3.ZERO
 
+## Cap on how hard separation and obstacle avoidance can push, so a crowd cannot
+## launch a unit across the map.
 func _max_force() -> float:
 	return maxf(speed() * 1.2, 2.0)
 
+## Push away from crowded neighbours. Weighted by how much closer than the combined
+## radii the pair already is, and applied even when stationary so idle formations do
+## not overlap.
 func _separation_force() -> Vector3:
 	var push := Vector3.ZERO
 	for other: Unit in world.query_units(global_position, SEPARATION + radius()):
@@ -237,6 +283,8 @@ func _separation_force() -> Vector3:
 			push += away / d * (want - d) * 3.4
 	return push.limit_length(_max_force())
 
+## Push out of structures the unit has walked into. Tested against the rectangle
+## rather than a radius, so units slide along walls instead of sticking to them.
 func _avoid_buildings() -> Vector3:
 	var push := Vector3.ZERO
 	for b: Building in world.query_buildings(global_position, 15.0):
@@ -257,6 +305,8 @@ func _avoid_buildings() -> Vector3:
 			push += Vector3(away.x, 0.0, away.y) / d * (margin - d) * 7.0
 	return push.limit_length(_max_force())
 
+## Commit the frame: integrate the velocity, sit on the terrain, refresh the spatial
+## grid, then update every animated part of the model.
 func _apply(delta: float) -> void:
 	global_position += velocity * delta
 	if world.terrain != null:
@@ -268,6 +318,8 @@ func _apply(delta: float) -> void:
 	if speed_len > 0.35:
 		facing = _turn_toward(facing, atan2(flat_speed.x, flat_speed.z), delta * 7.0)
 
+	# The turret tracks its target (or straight ahead) in world space, then stores the
+	# difference from the hull so it inherits the body's turn for free.
 	var aim := facing
 	if target != null and not target.dead:
 		aim = atan2(target.global_position.x - global_position.x,
@@ -279,6 +331,8 @@ func _apply(delta: float) -> void:
 	if turret != null:
 		turret.rotation.y = wrapf(_turret_yaw - facing, -PI, PI)
 
+	# Vehicles roll their wheels; infantry bob instead. Spin is about X because
+	# MeshKit.wheel lays the cylinder's axle along local X.
 	if wheels.size() > 0:
 		if speed_len > 0.2:
 			_wheel_spin += speed_len * delta / 0.42
@@ -293,6 +347,7 @@ func _apply(delta: float) -> void:
 		body.position.y = absf(sin(_bob)) * amp
 		body.rotation.x = sin(_bob * 2.0) * amp * 0.6
 
+	# Spawn pop: the model grows from a quarter size over half a second.
 	if _spawn_credit > 0.0:
 		_spawn_credit -= delta
 		if model_root != null:
@@ -308,6 +363,8 @@ func _turn_toward(from: float, to: float, max_step: float) -> float:
 		return from + diff
 	return from + signf(diff) * max_step
 
+## Infantry die in a puff; vehicles leave a wreck. Deliberately asymmetric so the
+## player can read what was lost from across the map.
 func die(killer: Entity = null) -> void:
 	if dead:
 		return

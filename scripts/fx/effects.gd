@@ -2,7 +2,16 @@ class_name Effects
 extends RefCounted
 # Pooled, self-cleaning visual effects. Every effect removes itself when done.
 # All effect materials are unique instances because they get mutated while fading.
+#
+# Nothing here holds state: each call builds its geometry under the given parent
+# (usually GameWorld.effects), animates it with a SceneTreeTween, and frees it. That
+# keeps the main scene free of effect bookkeeping at the cost of a little garbage per
+# shot, which is a good trade at these volumes.
+#
+# Because the nodes and the tween callbacks outlive a single frame, every mutation
+# goes through a unique material rather than the shared MeshKit cache.
 
+## A short emissive line from muzzle to target, for hitscan shots.
 static func tracer(parent: Node3D, from: Vector3, to: Vector3, color: Color,
 		width: float = 0.07, life: float = 0.11) -> void:
 	if parent == null or not parent.is_inside_tree():
@@ -22,6 +31,7 @@ static func tracer(parent: Node3D, from: Vector3, to: Vector3, color: Color,
 	mi.scale = Vector3(1.0, 1.0, dist)
 	_fade(mi, life, true)
 
+## Bright pop at the muzzle, plus a light so the shot briefly lights the ground.
 static func muzzle_flash(parent: Node3D, pos: Vector3, color: Color,
 		size: float = 1.0) -> void:
 	if parent == null or not parent.is_inside_tree():
@@ -39,6 +49,8 @@ static func muzzle_flash(parent: Node3D, pos: Vector3, color: Color,
 	parent.add_child(light)
 	_fade_light(light, 0.09)
 
+## Fireball and smoke, both growing as they fade. size scales the whole effect, so
+## a tank and a rifleman read differently at the same glance.
 static func explosion(parent: Node3D, pos: Vector3, size: float = 1.0) -> void:
 	if parent == null or not parent.is_inside_tree():
 		return
@@ -60,6 +72,7 @@ static func explosion(parent: Node3D, pos: Vector3, size: float = 1.0) -> void:
 	parent.add_child(light)
 	_fade_light(light, 0.35)
 
+## Flat expanding ring used when a structure finishes construction.
 static func dust(parent: Node3D, pos: Vector3, size: float = 1.0) -> void:
 	if parent == null or not parent.is_inside_tree():
 		return
@@ -68,6 +81,7 @@ static func dust(parent: Node3D, pos: Vector3, size: float = 1.0) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_pop(mi, 0.7, 2.8)
 
+## Expand a mesh while fading it out, then free it.
 static func _pop(node: Node3D, life: float, growth: float) -> void:
 	var tree := node.get_tree()
 	if tree == null:
@@ -81,6 +95,7 @@ static func _pop(node: Node3D, life: float, growth: float) -> void:
 	tw.tween_property(mat, "albedo_color:a", 0.0, life)
 	tw.chain().tween_callback(node.queue_free)
 
+## Fade a mesh in place, optionally driving its emission as well as its alpha.
 static func _fade(node: Node3D, life: float, emissive: bool) -> void:
 	var tree := node.get_tree()
 	if tree == null:
@@ -96,6 +111,7 @@ static func _fade(node: Node3D, life: float, emissive: bool) -> void:
 		tw.tween_property(mat, "albedo_color:a", 0.0, life)
 	tw.tween_callback(node.queue_free)
 
+## Fade a light out and free it.
 static func _fade_light(light: Light3D, life: float) -> void:
 	var tree := light.get_tree()
 	if tree == null:
@@ -105,6 +121,8 @@ static func _fade_light(light: Light3D, life: float) -> void:
 	tw.tween_callback(light.queue_free)
 
 # Scattered debris left where a unit died.
+## Persistent-ish debris: a scorch decal plus a few chunks that fall and settle. The
+## chunks are freed by their own tween, so nothing accumulates.
 static func wreck(parent: Node3D, origin: Vector3, size: float) -> void:
 	if parent == null or not parent.is_inside_tree():
 		return

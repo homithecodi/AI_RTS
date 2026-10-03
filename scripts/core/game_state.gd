@@ -1,5 +1,19 @@
 extends Node
 # Autoload: Game
+#
+# The only cross-cutting singleton. It survives scene reloads, so it deliberately
+# owns nothing that belongs to a particular match: no nodes, no entity references.
+#
+# Responsibilities:
+#   * the two Faction rosters and the match clock
+#   * the entity registry (register/unregister), so spawning and dying have one path
+#   * win/loss evaluation and the victory signal
+#   * global pause and game speed
+#   * signals the HUD listens to: resources_changed, selection_changed, game_over,
+#     message
+#
+# Anything that needs to know about the battlefield asks `world` (a GameWorld) and
+# any roster question goes through faction().
 
 signal resources_changed(team: int)
 signal selection_changed
@@ -55,6 +69,9 @@ func faction(team: int) -> Faction:
 func other_team(team: int) -> int:
 	return Defs.TEAM_ENEMY if team == Defs.TEAM_PLAYER else Defs.TEAM_PLAYER
 
+## Add a unit to its faction roster. Idempotent: structures call register_building()
+## twice (once on spawn, once when construction finishes to refresh the power grid),
+## so a duplicate entry would otherwise double-count power.
 func register_unit(unit: Unit) -> void:
 	var f := faction(unit.team)
 	if f and not f.units.has(unit):
@@ -67,6 +84,8 @@ func unregister_unit(unit: Unit) -> void:
 	if world and world.has_method("unregister_unit"):
 		world.unregister_unit(unit)
 
+## Registering also rebuilds the power totals, because a finished structure changes
+## what the faction can support. See the idempotency note on register_unit().
 func register_building(b: Building) -> void:
 	var f := faction(b.team)
 	if f and not f.buildings.has(b):
@@ -82,6 +101,8 @@ func unregister_building(b: Building) -> void:
 	if world and world.has_method("unregister_building"):
 		world.unregister_building(b)
 
+## Ask the HUD to refresh a resource readout. Emitted on a 10 Hz timer rather than
+## per frame, and immediately when something notable happens to a faction.
 func notify_resources(team: int) -> void:
 	resources_changed.emit(team)
 
@@ -98,6 +119,8 @@ func _process(delta: float) -> void:
 		_ui_timer = 0.1
 		resources_changed.emit(Defs.TEAM_PLAYER)
 
+## Game speed is Engine.time_scale, so it slows the whole simulation (physics,
+## tweens, particles) rather than just the tick rate. 1.0 is normal time.
 func set_speed(value: float) -> void:
 	game_speed = value
 	Engine.time_scale = value
@@ -113,6 +136,9 @@ func cycle_speed(dir: int) -> void:
 		idx = 1
 	set_speed(speeds[clampi(idx + dir, 0, speeds.size() - 1)])
 
+## Decide whether the match is over. Guarded against running before the first
+## structures exist, and against firing twice; the caller is
+## GameWorld._check_defeat(), which runs whenever an entity dies.
 func check_victory() -> void:
 	if match_over or not started:
 		return

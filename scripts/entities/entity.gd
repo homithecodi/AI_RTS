@@ -1,6 +1,18 @@
 class_name Entity
 extends Node3D
-# Shared base for every damageable thing on the battlefield.
+# Shared base for every damageable thing on the battlefield: units and structures.
+#
+# Owns hp, the damage pipeline, the faction bookkeeping for damage, and the two
+# overlays (health bar, selection ring) that every entity shows. Behaviour lives in
+# the subclasses.
+#
+# Damage and death flow:
+#   take_damage()  -> subtract hp, credit the factions, notify on_damaged()
+#   die()          -> subclass spawns effects, then calls _finish_death()
+#   _finish_death() -> deregister, emit `died`, free
+#
+# Nothing else should call queue_free() on an entity: the grid eviction and the
+# faction roster both happen inside _finish_death().
 
 signal died(entity: Entity)
 
@@ -19,6 +31,8 @@ var _hp_fill_mat: StandardMaterial3D = null
 var _hp_bar_w: float = 2.0
 var _sel_ring: MeshInstance3D = null
 
+## Bind this entity to a definition and a side. Subclasses call this from their own
+## spawn path, before the model is built, because the model needs `def` and `team`.
 func setup(d: Dictionary, in_team: int, w: Node3D) -> void:
 	def = d
 	def_id = String(d.get("id", ""))
@@ -30,6 +44,8 @@ func setup(d: Dictionary, in_team: int, w: Node3D) -> void:
 func display_name() -> String:
 	return String(def.get("name", def_id))
 
+## Height above the ground used as the aim point, so tracers and projectiles hit the
+## middle of a model rather than its feet.
 func aim_height() -> float:
 	return float(def.get("height", 2.0)) * 0.45
 
@@ -42,6 +58,11 @@ func center() -> Vector3:
 func distance_to(other: Entity) -> float:
 	return global_position.distance_to(other.global_position)
 
+## Apply damage and, if it kills, run the death sequence.
+##
+## `by_team` is who caused it (used for the damage-dealt statistic and for splash
+## attribution); `source` is the entity itself, when there is one. A source may be
+## freed by the time an in-flight projectile lands, so it is validated first.
 func take_damage(amount: float, by_team: int, source: Entity = null) -> void:
 	if dead or amount <= 0.0:
 		return
@@ -59,9 +80,13 @@ func take_damage(amount: float, by_team: int, source: Entity = null) -> void:
 	if hp <= 0.0:
 		die(source)
 
+## Hook for "I have been hit". The base implementation does nothing; Unit uses it to
+## acquire a target.
 func on_damaged(_source: Entity) -> void:
 	pass
 
+## Start the death sequence. Subclasses override to add effects and must end with a
+## call to _finish_death().
 func die(killer: Entity = null) -> void:
 	if dead:
 		return
@@ -79,10 +104,16 @@ func _finish_death(killer: Entity) -> void:
 	queue_free()
 
 # --- presentation helpers -------------------------------------------------
+# Both overlays are built once at spawn and then only repositioned or rescaled, so
+# nothing here allocates after the entity exists.
+
 # The bar is turned towards the camera by hand in _update_overlay instead of
 # using BILLBOARD_ENABLED: the billboard vertex shader rebuilds the model-view
 # matrix from the camera basis and keeps only the translation, so it silently
 # throws away the fill's scale and offset and every bar renders full width.
+#
+# The fill is a box inset to 92% of the bar and scaled about its own centre, then
+# shifted left so the filled part stays anchored to the left edge.
 func build_health_bar(height: float, width: float) -> void:
 	_hp_bar_w = width
 	_hp_bar = MeshKit.empty("HealthBar", Vector3(0, height, 0), self)
@@ -104,6 +135,8 @@ func build_health_bar(height: float, width: float) -> void:
 	_hp_fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_hp_bar.visible = false
 
+## Flat ring drawn on the ground under a selected entity. Created hidden; see
+## set_selected().
 func build_selection_ring(radius: float) -> void:
 	var mat := MeshKit.mat_unique(Defs.team_color(team), 1.0)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -120,6 +153,8 @@ func build_selection_ring(radius: float) -> void:
 	_sel_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_sel_ring.visible = false
 
+## Toggle the selection ring. Called from the controller and from _finish_death(),
+## so it is written to be idempotent.
 func set_selected(value: bool) -> void:
 	if selected == value:
 		return
@@ -127,6 +162,10 @@ func set_selected(value: bool) -> void:
 	if _sel_ring != null:
 		_sel_ring.visible = value
 
+## Refresh the health bar: visibility, fill length and colour.
+##
+## The bar only appears when the entity has taken damage or is selected, so a healthy
+## unselected unit costs nothing to draw.
 func _update_overlay() -> void:
 	if _hp_bar == null:
 		return

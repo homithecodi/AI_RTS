@@ -2,6 +2,14 @@ class_name EnemyAI
 extends Node
 # A classic Generals-style opponent: it builds an economy, keeps a production
 # line running, garrisons its base and periodically launches attack waves.
+#
+# The AI runs on a stagger of timers rather than one per-frame tick, because the three
+# jobs have very different rates of change: the economy is checked twice a second, the
+# production line every second, and the army every two. Each is on its own timer
+# (_think_econ, _think_prod, _think_army) so they never run on the same frame.
+#
+# difficulty scales three things: income, how much ore it keeps in hand before
+# spending (reserve), and how soon the first wave arrives.
 
 signal ai_event(text: String)
 
@@ -28,6 +36,7 @@ var _think_prod: float = 0.0
 var _think_army: float = 0.0
 var _think_garrison: float = 0.0
 
+## Difficulty affects income, spending reserve and wave pacing.
 func setup(w: GameWorld, level: float = 1.0) -> void:
 	world = w
 	team = Defs.TEAM_ENEMY
@@ -41,6 +50,8 @@ func setup(w: GameWorld, level: float = 1.0) -> void:
 func base() -> Vector3:
 	return world.base_pos(team)
 
+## Where waves gather before pushing out: just outside the base, on the far side from
+## the map centre, so the staging area is behind the defences.
 func staging_point() -> Vector3:
 	var b := base()
 	var out := Vector3(-b.x, 0.0, -b.z)
@@ -122,6 +133,9 @@ func _build_structure() -> void:
 	world.spawn_building(wanted, team, spot, _facing_for(wanted, spot), false)
 	ai_event.emit("Enemy built %s" % String(Defs.building_def(wanted).get("name", wanted)))
 
+## Next structure to build. A fixed opening order first (economy, then power, then army),
+## then a weighted pick from what is missing, so the AI converges on a working base
+## without needing a tech tree.
 func _next_structure() -> String:
 	var f := Game.faction(team)
 	if f == null:
@@ -157,6 +171,8 @@ func _next_structure() -> String:
 func _under_attack() -> bool:
 	return _threat_position() != Vector3.INF
 
+## Centre of the player's attacking force, or the enemy base if nothing is attacking.
+## Used both for deciding to fall back and for what to face when garrisoning.
 func _threat_position() -> Vector3:
 	var b := base()
 	var f := Game.faction(team)
@@ -176,6 +192,8 @@ func _is_enemy_near(pos: Vector3, radius: float) -> bool:
 			return true
 	return false
 
+## Where to put the next structure. Refineries go on the best ore cluster; everything
+## else goes near the base, on whichever side is not being attacked.
 func _structure_spot(building_id: String) -> Vector3:
 	var b := base()
 	var forward := Vector3(-b.x, 0.0, -b.z)
@@ -292,6 +310,7 @@ func _produce_units() -> void:
 			b.rally_point.y = world.terrain.height_at(b.rally_point.x, b.rally_point.z)
 			return
 
+## Pick what to train: mostly tanks, with rocketeers once the base is secure.
 func _desired_unit() -> String:
 	var factories := _count("war_factory")
 	var has_anti_vehicle := _unit_count("rocketeer") + _unit_count("missile_tank")
@@ -309,6 +328,9 @@ func _desired_unit() -> String:
 	return ""
 
 # --- army ----------------------------------------------------------------
+## Decide what the army is doing: launch a wave when one is ready and the timer is up,
+## otherwise recall and defend. Also the cleanup path for dead units, since the group
+## arrays are snapshots.
 func _manage_army() -> void:
 	var f := Game.faction(team)
 	if f == null:
@@ -374,6 +396,10 @@ func _launch_wave() -> void:
 func _recall(where: Vector3) -> void:
 	_order_group(_attack_group, where, true)
 
+## Order a snapshot of units into a spread formation at a destination.
+##
+## group is a copy of the army taken earlier, so members may already be dead or
+## freed: the validity check has to come before any other use of them.
 func _order_group(group: Array, dest: Vector3, attacking: bool) -> void:
 	var usable: Array[Unit] = []
 	for u in group:
@@ -405,6 +431,7 @@ func _order_group(group: Array, dest: Vector3, attacking: bool) -> void:
 		else:
 			usable[i].order_move(p)
 
+## Pull defenders back onto anything being attacked near the base.
 func _garrison() -> void:
 	var f := Game.faction(team)
 	if f == null:
