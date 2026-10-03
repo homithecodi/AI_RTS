@@ -5,8 +5,8 @@ extends Node3D
 
 const MIN_DIST := 26.0
 const MAX_DIST := 190.0
-const MIN_PITCH := -0.60
-const MAX_PITCH := -1.36
+const MIN_PITCH := -1.36
+const MAX_PITCH := -0.60
 const PAN_SPEED := 46.0
 const EDGE_MARGIN := 14.0
 
@@ -46,7 +46,10 @@ func _ready() -> void:
 
 func setup(w: GameWorld, start_pos: Vector3) -> void:
 	world = w
-	yaw = atan2(-start_pos.x, -start_pos.z)
+	# The rig orbits behind the focus point, so the yaw has to point the camera
+	# back from the map edge towards the middle: yaw = atan2(pos.x, pos.z) puts
+	# the camera on the far side of start_pos looking at the enemy base.
+	yaw = atan2(start_pos.x, start_pos.z)
 	focus_on(start_pos)
 
 func _apply() -> void:
@@ -97,7 +100,8 @@ func _process(delta: float) -> void:
 	var pan := Vector3.ZERO
 	var speed := PAN_SPEED * (0.35 + distance / MAX_DIST * 1.15)
 	var forward := Vector3(-sin(yaw), 0, -cos(yaw))
-	var right := Vector3(forward.z, 0, -forward.x)
+	# Screen right of `forward` with up = +Y: right = up x forward, not forward x up.
+	var right := Vector3(-forward.z, 0, forward.x)
 	if Input.is_action_pressed(&"cam_left"):
 		pan -= right
 	if Input.is_action_pressed(&"cam_right"):
@@ -145,7 +149,7 @@ func _edge_delta() -> Vector3:
 	if dir == Vector2.ZERO:
 		return Vector3.ZERO
 	var forward := Vector3(-sin(yaw), 0, -cos(yaw))
-	var right := Vector3(forward.z, 0, -forward.x)
+	var right := Vector3(-forward.z, 0, forward.x)
 	return (right * dir.x + forward * dir.y).normalized()
 
 # --- picking helpers -----------------------------------------------------

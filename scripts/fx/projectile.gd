@@ -58,7 +58,7 @@ func _process(delta: float) -> void:
 	if _life <= 0.0:
 		queue_free()
 		return
-	if target_entity != null and not target_entity.dead:
+	if is_instance_valid(target_entity) and not target_entity.dead:
 		target_point = target_entity.global_position + Vector3(0, target_entity.aim_height(), 0)
 	var to := target_point - global_position
 	var dist := to.length()
@@ -73,8 +73,10 @@ func _process(delta: float) -> void:
 func _impact() -> void:
 	var parent := get_parent()
 	Effects.muzzle_flash(parent, global_position, color, 1.4)
+	# The shooter may have died while this shell was in the air.
+	var src: Entity = shooter if is_instance_valid(shooter) else null
 	if splash > 0.1 and world != null and world.has_method("splash_damage"):
-		world.splash_damage(global_position, splash, damage, team, shooter)
-	elif target_entity != null and not target_entity.dead:
-		target_entity.take_damage(damage, team, shooter)
+		world.splash_damage(global_position, splash, damage, team, src)
+	elif is_instance_valid(target_entity) and not target_entity.dead:
+		target_entity.take_damage(damage, team, src)
 	queue_free()

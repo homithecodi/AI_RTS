@@ -164,6 +164,7 @@ func on_entity_died(entity: Entity, _killer: Entity) -> void:
 	if entity is Unit:
 		var u := entity as Unit
 		units.erase(u)
+		_forget_unit(u)
 		Game.unregister_unit(u)
 		var f := Game.faction(u.team)
 		if f != null:
@@ -173,6 +174,7 @@ func on_entity_died(entity: Entity, _killer: Entity) -> void:
 	else:
 		var b := entity as Building
 		buildings.erase(b)
+		_forget_building(b)
 		Game.unregister_building(b)
 	_check_defeat()
 
@@ -215,17 +217,43 @@ func refresh_unit_grid(u: Unit) -> void:
 	u._grid_cell = cell
 
 func _add_building_to_grid(b: Building) -> void:
-	var cell := _cell_of(Vector2(b.global_position.x, b.global_position.z))
+	b._grid_cell = _cell_of(Vector2(b.global_position.x, b.global_position.z))
+	for key in _building_cells(b):
+		if not _building_grid.has(key):
+			_building_grid[key] = []
+		var arr: Array = _building_grid[key]
+		if not arr.has(b):
+			arr.append(b)
+
+func _building_cells(b: Building) -> Array:
+	var cell := b._grid_cell
 	var span := int(ceil(float(b.def.get("footprint", 6.0)) * 0.75 / CELL)) + 1
+	var out: Array = []
 	for dx in range(-span, span + 1):
 		for dz in range(-span, span + 1):
-			var key := Vector2i(cell.x + dx, cell.y + dz)
-			if not _building_grid.has(key):
-				_building_grid[key] = []
-			var arr: Array = _building_grid[key]
-			if not arr.has(b):
-				arr.append(b)
-	b._grid_cell = cell
+			out.append(Vector2i(cell.x + dx, cell.y + dz))
+	return out
+
+# Entities queue_free() the moment they die, so the grids have to drop them
+# before that happens: a freed instance left in a bucket makes every later
+# spatial query dereference a dangling reference.
+func _forget_unit(u: Unit) -> void:
+	if _unit_grid.has(u._grid_cell):
+		var bucket: Array = _unit_grid[u._grid_cell]
+		bucket.erase(u)
+		if bucket.is_empty():
+			_unit_grid.erase(u._grid_cell)
+	u._grid_cell = Vector2i(99999, 99999)
+
+func _forget_building(b: Building) -> void:
+	for key in _building_cells(b):
+		if not _building_grid.has(key):
+			continue
+		var arr: Array = _building_grid[key]
+		arr.erase(b)
+		if arr.is_empty():
+			_building_grid.erase(key)
+	b._grid_cell = Vector2i(99999, 99999)
 
 func query_units(pos: Vector3, radius: float) -> Array:
 	var out: Array = []
@@ -239,7 +267,7 @@ func query_units(pos: Vector3, radius: float) -> Array:
 				continue
 			var bucket: Array = _unit_grid[key]
 			for u in bucket:
-				if u.dead or seen.has(u):
+				if not is_instance_valid(u) or u.dead or seen.has(u):
 					continue
 				if u.global_position.distance_squared_to(pos) <= radius * radius:
 					seen[u] = true
@@ -260,7 +288,7 @@ func query_buildings(pos: Vector3, radius: float) -> Array:
 				continue
 			var arr: Array = _building_grid[key]
 			for b in arr:
-				if b.dead or seen.has(b):
+				if not is_instance_valid(b) or b.dead or seen.has(b):
 					continue
 				if b.global_position.distance_squared_to(pos) <= radius * radius:
 					seen[b] = true

@@ -1,5 +1,7 @@
 class_name BuildingModels
 extends RefCounted
+# Structure bodies are authored facing local +Z (doors, glow strips and the
+# refinery arms all sit on the +Z side), matching heading = atan2(dir.x, dir.z).
 
 const COL_WALL := Color(0.56, 0.56, 0.58)
 const COL_TRIM := Color(0.34, 0.36, 0.40)
@@ -101,9 +103,9 @@ static func _defense_tower(root: Node3D, paint, trim, dark, glow, metal) -> Dict
 	MeshKit.box(root, Vector3(1.6, 0.3, 1.6), Vector3(0, 5.1, 0), dark)
 	var turret := MeshKit.empty("Turret", Vector3(0, 5.5, 0), root)
 	MeshKit.box(turret, Vector3(1.7, 0.7, 1.9), Vector3(0, 0.2, 0), paint)
-	MeshKit.box(turret, Vector3(1.8, 0.16, 1.4), Vector3(0, 0.6, 0.1), dark)
+	MeshKit.box(turret, Vector3(1.8, 0.16, 1.4), Vector3(0, 0.6, -0.1), dark)
 	for sx in [-1.0, 1.0]:
-		MeshKit.cyl(turret, 0.10, 1.60, Vector3(sx * 0.30, 0.25, -1.20), metal,
-			Vector3(-PI * 0.5, 0, 0))
-	var muzzle := MeshKit.empty("Muzzle", Vector3(0.0, 0.25, -1.95), turret)
+		MeshKit.cyl(turret, 0.10, 1.60, Vector3(sx * 0.30, 0.25, 1.20), metal,
+			Vector3(PI * 0.5, 0, 0))
+	var muzzle := MeshKit.empty("Muzzle", Vector3(0.0, 0.25, 1.95), turret)
 	return {"root": root, "turret": turret, "muzzle": muzzle, "beam": null}

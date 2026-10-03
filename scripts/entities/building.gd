@@ -224,7 +224,7 @@ func _tick_weapon(delta: float) -> void:
 		return
 	var aim := atan2(found.global_position.x - global_position.x,
 		found.global_position.z - global_position.z)
-	turret.rotation.y = wrapf(aim, -PI, PI)
+	turret.rotation.y = wrapf(aim - rotation.y, -PI, PI)
 	if _cooldown > 0.0 or distance_to(found) > reach:
 		return
 	_cooldown = float(def.get("cooldown", 1.2))

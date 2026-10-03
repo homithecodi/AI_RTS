@@ -18,7 +18,15 @@ var ai_faction: Faction = null
 var _ui_timer: float = 0.0
 
 func _ready() -> void:
+	reset_match()
+
+# The Game autoload survives reload_current_scene(), so it has to drop every
+# reference into the old scene. Otherwise the next match keeps a faction roster
+# full of freed units and structures.
+func reset_match() -> void:
 	Defs.setup_input()
+	factions.clear()
+
 	var player := Faction.new()
 	player.team = Defs.TEAM_PLAYER
 	player.is_ai = false
@@ -30,6 +38,16 @@ func _ready() -> void:
 	ai.ore = Defs.AI_START_ORE
 	factions[Defs.TEAM_ENEMY] = ai
 	ai_faction = ai
+
+	world = null
+	elapsed = 0.0
+	match_over = false
+	started = false
+	winner = -1
+	paused = false
+	_ui_timer = 0.0
+	set_speed(1.0)
+	get_tree().paused = false
 
 func faction(team: int) -> Faction:
 	return factions.get(team, null)

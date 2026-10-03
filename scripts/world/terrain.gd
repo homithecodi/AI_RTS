@@ -163,7 +163,9 @@ func _build_mesh() -> void:
 			var b := a + 1
 			var c := a + row
 			var d := c + 1
-			idx_arr.append_array([a, c, b, b, c, d])
+			# A triangle is front-facing when its geometric normal points away from
+			# the viewer, so an upward-facing quad has to be wound a-b-c, not a-c-b.
+			idx_arr.append_array([a, b, c, b, d, c])
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -243,7 +245,9 @@ func build_minmap_texture(size: int) -> ImageTexture:
 	for j in size:
 		for i in size:
 			var x := -_half + (float(i) + 0.5) / float(size) * MAP_SIZE
-			var z := -_half + (float(j) + 0.5) / float(size) * MAP_SIZE
+			# Row 0 is the top of the map, which is +z (north), matching
+			# world_to_map above.
+			var z := _half - (float(j) + 0.5) / float(size) * MAP_SIZE
 			var h := height_at(x, z)
 			var nrm := normal_at(x, z)
 			var p := Vector3(x, h, z)
@@ -255,13 +259,16 @@ func build_minmap_texture(size: int) -> ImageTexture:
 	minimap_texture = ImageTexture.create_from_image(img)
 	return minimap_texture
 
+# Minimap orientation: +x is east and +z is north, which is the compass the rest
+# of the game describes itself in (the enemy base is +x,+z, i.e. north-east).
+# So world_to_map has to put +z at the TOP of the map, not the bottom.
 func world_to_map(x: float, z: float) -> Vector2:
 	return Vector2(
 		clampf((x + _half) / MAP_SIZE, 0.0, 1.0),
-		clampf((z + _half) / MAP_SIZE, 0.0, 1.0)
+		clampf((_half - z) / MAP_SIZE, 0.0, 1.0)
 	)
 
 func map_to_world(u: float, v: float) -> Vector3:
 	var x := u * MAP_SIZE - _half
-	var z := v * MAP_SIZE - _half
+	var z := _half - v * MAP_SIZE
 	return Vector3(x, height_at(x, z), z)

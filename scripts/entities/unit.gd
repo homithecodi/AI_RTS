@@ -1,5 +1,9 @@
 class_name Unit
 extends Entity
+# Heading convention shared by every unit and structure: rotation.y = yaw means
+# the model's local +Z faces (sin yaw, 0, cos yaw), so a world direction becomes
+# a yaw with atan2(dir.x, dir.z). UnitModels and BuildingModels both build their
+# models pointing down local +Z to match.
 
 enum Order { NONE, MOVE, ATTACK, ATTACK_MOVE }
 
@@ -162,7 +166,7 @@ func _fire(t: Entity) -> void:
 func _apply_damage(t: Entity, dmg: float) -> void:
 	var splash := float(def.get("splash", 0.0))
 	if splash > 0.1:
-		world.splash_damage(t.center(), splash, dmg, team, t)
+		world.splash_damage(t.center(), splash, dmg, team, self)
 	else:
 		t.take_damage(dmg, team, self)
 

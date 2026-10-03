@@ -55,6 +55,8 @@ func distance_to(other: Entity) -> float:
 func take_damage(amount: float, by_team: int, source: Entity = null) -> void:
 	if dead or amount <= 0.0:
 		return
+	if not is_instance_valid(source):
+		source = null
 	hp -= amount
 	damage_logged += amount
 	last_hit_time = Game.elapsed
@@ -88,12 +90,15 @@ func die(killer: Entity = null) -> void:
 	queue_free()
 
 # --- presentation helpers -------------------------------------------------
+# The bar is turned towards the camera by hand in _update_overlay instead of
+# using BILLBOARD_ENABLED: the billboard vertex shader rebuilds the model-view
+# matrix from the camera basis and keeps only the translation, so it silently
+# throws away the fill's scale and offset and every bar renders full width.
 func build_health_bar(height: float, width: float) -> void:
 	_hp_bar_w = width
 	_hp_bar = MeshKit.empty("HealthBar", Vector3(0, height, 0), self)
 	var bg_mat := MeshKit.mat_unique(Color(0.06, 0.06, 0.07), 1.0)
 	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg_mat.no_depth_test = true
 	bg_mat.render_priority = 4
 	var bg := MeshKit.part(_hp_bar, MeshKit.box_mesh(Vector3(width, width * 0.14, 0.04)),
@@ -102,7 +107,6 @@ func build_health_bar(height: float, width: float) -> void:
 
 	_hp_fill_mat = MeshKit.mat_unique(Color(0.35, 0.9, 0.35), 1.0)
 	_hp_fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_hp_fill_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	_hp_fill_mat.no_depth_test = true
 	_hp_fill_mat.render_priority = 5
 	var fw := width * 0.92
@@ -143,6 +147,7 @@ func _update_overlay(delta: float) -> void:
 		_hp_bar.visible = want
 	if not want:
 		return
+	_face_camera()
 	var fw := _hp_bar_w * 0.92
 	_hp_fill.scale.x = maxf(frac, 0.001)
 	_hp_fill.position.x = -fw * 0.5 * (1.0 - frac)
@@ -152,3 +157,18 @@ func _update_overlay(delta: float) -> void:
 		_hp_fill_mat.albedo_color = Color(0.95, 0.80, 0.20)
 	else:
 		_hp_fill_mat.albedo_color = Color(0.95, 0.25, 0.18)
+
+# Yaw-only billboard so the bar's local +X stays screen-right, which is what the
+# left-anchored fill offset above assumes.
+func _face_camera() -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var cam := vp.get_camera_3d()
+	if cam == null:
+		return
+	var to_cam := cam.global_position - _hp_bar.global_position
+	to_cam.y = 0.0
+	if to_cam.length_squared() < 0.0001:
+		return
+	_hp_bar.rotation.y = atan2(to_cam.x, to_cam.z)

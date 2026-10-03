@@ -321,6 +321,7 @@ func _build_overlay() -> void:
 
 func _restart() -> void:
 	get_tree().paused = false
+	Game.reset_match()
 	get_tree().reload_current_scene()
 
 # --- refresh -------------------------------------------------------------
@@ -377,7 +378,7 @@ func _refresh_selection() -> void:
 
 func _refresh_selection_panel() -> void:
 	_clear(sel_box)
-	var sel := controller.selection
+	var sel := controller.live_selection()
 	sel_panel.visible = not sel.is_empty()
 	if sel.is_empty():
 		return
@@ -437,9 +438,11 @@ func _refresh_selection_panel() -> void:
 func _refresh_production() -> void:
 	_clear(prod_box)
 	var producers: Array[Building] = []
-	for e in controller.selection:
-		if e is Building and not e.dead and not (e as Building).produces().is_empty():
-			producers.append(e as Building)
+	for e in controller.live_selection():
+		if e is Building:
+			var b := e as Building
+			if not b.produces().is_empty():
+				producers.append(b)
 	prod_panel.visible = not producers.is_empty()
 	if producers.is_empty():
 		return

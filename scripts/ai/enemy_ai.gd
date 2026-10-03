@@ -339,7 +339,7 @@ func _manage_army() -> void:
 		if not is_instance_valid(u) or u.dead:
 			continue
 		alive += 1
-		if u.target != null and not u.target.dead:
+		if is_instance_valid(u.target) and not u.target.dead:
 			engaged += 1
 	if alive == 0:
 		_attacking = false
@@ -381,8 +381,11 @@ func _recall(where: Vector3) -> void:
 func _order_group(group: Array, dest: Vector3, attacking: bool) -> void:
 	var usable: Array[Unit] = []
 	for u in group:
-		if u is Unit and not u.dead and is_instance_valid(u):
-			usable.append(u)
+		# group is a snapshot of the army, so members can already be freed here.
+		if not is_instance_valid(u) or u.dead:
+			continue
+		if u is Unit:
+			usable.append(u as Unit)
 	if usable.is_empty():
 		return
 	var spacing := 3.0
@@ -392,7 +395,7 @@ func _order_group(group: Array, dest: Vector3, attacking: bool) -> void:
 	if dir.length_squared() < 0.01:
 		dir = Vector3(0, 0, 1)
 	dir = dir.normalized()
-	var right := Vector3(dir.z, 0, -dir.x)
+	var right := Vector3(-dir.z, 0, dir.x)
 	var cols := maxi(1, int(ceil(sqrt(float(usable.size())))))
 	for i in usable.size():
 		var c := i % cols

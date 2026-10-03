@@ -28,18 +28,27 @@ func setup(w: GameWorld, cam: RTSCamera) -> void:
 	world = w
 	camera = cam
 
+# Selected entities are freed the frame they die, so every reader has to drop
+# the dangling entries before touching them.
+func live_selection() -> Array[Entity]:
+	var out: Array[Entity] = []
+	for e in selection:
+		if is_instance_valid(e) and not e.dead:
+			out.append(e)
+	return out
+
 func selected_units() -> Array[Unit]:
 	var out: Array[Unit] = []
-	for e in selection:
-		if e is Unit and not e.dead:
-			out.append(e)
+	for e in live_selection():
+		if e is Unit:
+			out.append(e as Unit)
 	return out
 
 func selected_buildings() -> Array[Building]:
 	var out: Array[Building] = []
-	for e in selection:
-		if e is Building and not e.dead:
-			out.append(e)
+	for e in live_selection():
+		if e is Building:
+			out.append(e as Building)
 	return out
 
 # --- input ---------------------------------------------------------------
@@ -140,7 +149,7 @@ func select(entities: Array) -> void:
 			e.set_selected(false)
 	selection.clear()
 	for e in entities:
-		if e == null or e.dead or e.team != Defs.TEAM_PLAYER:
+		if not is_instance_valid(e) or e.dead or e.team != Defs.TEAM_PLAYER:
 			continue
 		selection.append(e)
 		e.set_selected(true)
@@ -359,7 +368,7 @@ func _formation_offsets(count: int, dir: Vector3, spacing: float) -> Array[Vecto
 		out.append(Vector3.ZERO)
 		return out
 	var fwd := dir
-	var right := Vector3(fwd.z, 0, -fwd.x)
+	var right := Vector3(-fwd.z, 0, fwd.x)
 	var cols := int(ceil(sqrt(float(count))))
 	var rows := int(ceil(float(count) / float(cols)))
 	for i in count:
