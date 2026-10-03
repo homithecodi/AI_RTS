@@ -159,9 +159,17 @@ func _update_overlay(delta: float) -> void:
 		_hp_fill_mat.albedo_color = Color(0.95, 0.25, 0.18)
 
 # Yaw-only billboard so the bar's local +X stays screen-right, which is what the
-# left-anchored fill offset above assumes. The aim has to be expressed in the
-# parent's frame: structures carry their heading on their own rotation.y, so a
-# world yaw assigned straight to rotation.y would be added to that heading.
+# left-anchored fill offset above assumes.
+#
+# The bar is aimed along the camera's view direction, not at the camera's
+# position: aiming at the position is a radial billboard, which makes every bar
+# swing by a different amount as the camera pans or zooms. Sharing one view
+# direction keeps all the bars coplanar and still, and they only turn when the
+# camera itself turns.
+#
+# The aim still has to be expressed in the parent's frame: structures carry
+# their heading on their own rotation.y, so a world yaw assigned straight to
+# rotation.y would be added to that heading.
 func _face_camera() -> void:
 	var vp := get_viewport()
 	if vp == null:
@@ -169,15 +177,18 @@ func _face_camera() -> void:
 	var cam := vp.get_camera_3d()
 	if cam == null:
 		return
-	var to_cam := cam.global_position - _hp_bar.global_position
-	to_cam.y = 0.0
-	if to_cam.length_squared() < 0.0001:
+	# The camera looks down its local -Z, so its local +Z points back out of the
+	# screen: that is the direction a billboard's face should point, and it keeps
+	# the bar's local +X aligned with screen-right.
+	var aim: Vector3 = cam.global_transform.basis.z
+	aim.y = 0.0
+	if aim.length_squared() < 0.0001:
 		return
 	var parent := _hp_bar.get_parent() as Node3D
 	if parent == null:
-		_hp_bar.rotation.y = atan2(to_cam.x, to_cam.z)
+		_hp_bar.rotation.y = atan2(aim.x, aim.z)
 		return
-	var local := parent.global_transform.basis.inverse() * to_cam
+	var local := parent.global_transform.basis.inverse() * aim
 	local.y = 0.0
 	if local.length_squared() < 0.000001:
 		return
