@@ -27,6 +27,8 @@ var reserve: float = 400.0
 
 var _attack_group: Array[Unit] = []
 var _wave_dest := Vector3.ZERO
+var _current_objective: Entity = null
+var _objective_timer: float = 0.0
 var _attacking: bool = false
 var _wave_number: int = 0
 var _next_wave_in: float = 55.0
@@ -80,7 +82,7 @@ func _process(delta: float) -> void:
 	_think_army -= delta
 	if _think_army <= 0.0:
 		_think_army = 0.5
-		_manage_army()
+		_manage_army(delta)
 	_think_garrison -= delta
 	if _think_garrison <= 0.0:
 		_think_garrison = 4.0
@@ -330,9 +332,12 @@ func _desired_unit() -> String:
 
 # --- army ----------------------------------------------------------------
 ## Decide what the army is doing: launch a wave when one is ready and the timer is up,
-## otherwise recall and defend. Also the cleanup path for dead units, since the group
-## arrays are snapshots.
-func _manage_army() -> void:
+## otherwise recall and defend. While a wave runs it is handed a live objective to
+## pursue (see _direct_wave), which is what lets it keep attacking instead of standing
+## around once its first target dies.
+##
+## Also the cleanup path for dead units, since the group arrays are snapshots.
+func _manage_army(delta: float) -> void:
 	var f := Game.faction(team)
 	if f == null:
 		return
@@ -342,6 +347,7 @@ func _manage_army() -> void:
 		_recall(threat)
 		_attacking = false
 		_attack_group.clear()
+		_current_objective = null
 		_wave_cooldown = 18.0
 		return
 
@@ -354,6 +360,7 @@ func _manage_army() -> void:
 	# A wave is a snapshot taken when it launched, so recruits built afterwards are
 	# not in it. Pull them in rather than leaving them to mill about near the base.
 	_absorb_recruits()
+	_direct_wave(delta)
 
 	# End the wave when it is spent or has stalled far from home.
 	var alive := 0
@@ -367,16 +374,19 @@ func _manage_army() -> void:
 	if alive == 0:
 		_attacking = false
 		_attack_group.clear()
+		_current_objective = null
 		_next_wave_in = 45.0
 	elif alive <= 1 and _wave_cooldown > 25.0:
 		_recall(base())
 		_attacking = false
 		_attack_group.clear()
+		_current_objective = null
 		_next_wave_in = 40.0
 	elif engaged == 0 and _wave_cooldown > 70.0:
 		_recall(base())
 		_attacking = false
 		_attack_group.clear()
+		_current_objective = null
 		_next_wave_in = 40.0
 
 func _wave_size() -> int:
@@ -390,16 +400,115 @@ func _launch_wave() -> void:
 	_wave_number += 1
 	_attacking = true
 	_wave_cooldown = 0.0
-	var enemy_base := world.base_pos(Game.other_team(team))
-	# nearest_enemy_structure() answers "nearest building that is not on `team`", so
-	# it must be given *our* team to return something worth attacking. Passing the
-	# enemy's team here made the wave march on our own structures.
-	var target := world.nearest_enemy_structure(enemy_base, team)
-	var dest: Vector3 = target.global_position if target != null else enemy_base
-	_wave_dest = dest
-	_order_group(_attack_group, dest, true)
+	# The wave starts on a live objective, and _direct_wave() keeps handing out new
+	# ones as targets fall, so this is only the opening move rather than the whole plan.
+	var obj := _objective()
+	_current_objective = obj
+	_wave_dest = obj.global_position if obj != null \
+		else world.base_pos(Game.other_team(team))
+	_order_group(_attack_group, _wave_dest, true)
 	ai_event.emit("Enemy is attacking (wave %d, %d units)" % [_wave_number, _attack_group.size()])
 	_next_wave_in = 120.0
+
+## What destroying one enemy structure is worth to us.
+##
+## Power comes first: a base without power cannot build or shoot properly, which is
+## worth more than any single building, and it is the cheapest thing to kill.
+func _structure_value(def_id: String) -> float:
+	match def_id:
+		"power_plant": return 130.0
+		"war_factory": return 110.0
+		"barracks": return 100.0
+		"refinery": return 95.0
+		"defense_tower": return 70.0
+	return 60.0
+
+## What the wave should be destroying right now.
+##
+## Recomputed continuously rather than once per wave, so the army moves straight on to
+## the next best target instead of idling. Structures are always preferred, because
+## that is what actually wins the game; mobile units are only hunted once the enemy has
+## no structures left to attack.
+##
+## Scoring trades value against distance, weighted so that value dominates: two power
+## plants can be worth chasing right across the map, but the army will not abandon a
+## war factory to kill a scout on the far side.
+func _objective() -> Entity:
+	var f := Game.faction(Game.other_team(team))
+	if f == null:
+		return null
+	var centre := _wave_centre()
+	var best: Entity = null
+	var best_score := -1.0e20
+	for b in f.buildings:
+		if not is_instance_valid(b) or b.dead:
+			continue
+		var score := _structure_value(b.def_id)
+		score -= centre.distance_to(b.global_position) * 0.5
+		# A slight pull towards the enemy base: finish them off rather than raid.
+		score -= b.global_position.distance_to(base()) * 0.05
+		if score > best_score:
+			best_score = score
+			best = b
+	if best != null:
+		return best
+	var best_unit: Entity = null
+	var best_d := 1.0e20
+	for u in f.units:
+		if not is_instance_valid(u) or u.dead:
+			continue
+		var d := centre.distance_to(u.global_position)
+		if d < best_d:
+			best_d = d
+			best_unit = u
+	return best_unit
+
+## Midpoint of the live wave, used to measure how far a candidate target is.
+func _wave_centre() -> Vector3:
+	var sum := Vector3.ZERO
+	var n := 0
+	for u in _attack_group:
+		if not is_instance_valid(u) or u.dead:
+			continue
+		sum += u.global_position
+		n += 1
+	if n == 0:
+		return staging_point()
+	return sum / float(n)
+
+## Keep the running wave pointed at something worth killing.
+##
+## The objective is re-picked on a slow timer rather than every tick, so the army does
+## not twitch between two equally good targets. When it changes, the previous target
+## usually just died, so that is reported as an event.
+##
+## Units that already have something in range keep shooting it — that is where the
+## incidental kills of nearby units come from — and everything else is handed the
+## objective. Units are issued the objective as a hard attack order rather than a move,
+## so they commit to killing it instead of walking past.
+func _direct_wave(delta: float) -> void:
+	_objective_timer -= delta
+	if _objective_timer <= 0.0:
+		_objective_timer = 1.2
+		var next := _objective()
+		if next != _current_objective:
+			var lost := _current_objective
+			_current_objective = next
+			if next != null:
+				_wave_dest = next.global_position
+				if lost != null and (not is_instance_valid(lost) or lost.dead):
+					ai_event.emit("Enemy is now attacking %s" % next.display_name())
+	var obj := _current_objective
+	if not is_instance_valid(obj) or obj.dead:
+		obj = null
+	if obj == null:
+		return
+	for u in _attack_group:
+		if not is_instance_valid(u) or u.dead:
+			continue
+		if u.target != null and is_instance_valid(u.target) and not u.target.dead:
+			continue
+		u.order_attack(obj)
 
 ## Pull freshly produced units into the running wave.
 ##

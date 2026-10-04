@@ -396,24 +396,6 @@ func find_enemy_in_radius(pos: Vector3, radius: float,
 			best = b
 	return best
 
-## Nearest structure that does NOT belong to `team`, to `pos`. Returns null if the
-## team owns everything on the map.
-##
-## Note the direction of the argument: pass *your own* team to be told where the
-## enemy is nearest to something. Passing the enemy team instead returns one of your
-## own buildings.
-func nearest_enemy_structure(pos: Vector3, team: int) -> Building:
-	var best: Building = null
-	var best_d := 1.0e20
-	for b in buildings:
-		if b.team == team or b.dead:
-			continue
-		var d := b.global_position.distance_squared_to(pos)
-		if d < best_d:
-			best_d = d
-			best = b
-	return best
-
 ## Area damage around an impact. Damage falls off towards the edge of the radius but
 ## never below a quarter, and structures get a slightly wider search plus a footprint
 ## allowance so a near miss still clips the edge of a base.
