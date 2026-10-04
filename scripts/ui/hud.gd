@@ -167,6 +167,10 @@ func _build_top_bar() -> void:
 	row.add_child(spacer)
 
 	speed_label = _label("1x   SPACE pause   [ ] speed", 12, Color(0.62, 0.66, 0.72))
+	# The readout doubles as the way out of a pause: while paused it becomes a target
+	# the player can click, so getting into a pause can never be a dead end.
+	speed_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	speed_label.gui_input.connect(_on_speed_label_input)
 	row.add_child(speed_label)
 
 	var help_btn := Button.new()
@@ -174,6 +178,50 @@ func _build_top_bar() -> void:
 	help_btn.tooltip_text = "Show or hide the controls list"
 	help_btn.pressed.connect(_toggle_help)
 	row.add_child(help_btn)
+
+## Clicking the speed readout while paused resumes the game. This is the same action
+## as pressing SPACE, reachable without remembering the key.
+func _on_speed_label_input(event: InputEvent) -> void:
+	if not Game.paused:
+		return
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			Game.toggle_pause()
+			# Stop the click falling through to the battlefield behind the HUD.
+			speed_label.accept_event()
+
+## Match-level shortcuts only: pause, game speed, help and restarting. Anything
+## contextual (selection, orders, placement) belongs to PlayerController, which needs
+## the world and the camera to interpret it.
+##
+## These live on the HUD rather than the scene root because the HUD is the one subtree
+## with PROCESS_MODE_ALWAYS. The root cannot take it: the mode is inherited, so it
+## would make the world ignore the pause as well — which is exactly the bug this
+## arrangement avoids.
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		var ev := event as InputEventKey
+		if not ev.pressed or ev.echo:
+			return
+		match ev.keycode:
+			KEY_SPACE:
+				Game.toggle_pause()
+			KEY_BRACKETRIGHT:
+				Game.cycle_speed(1)
+			KEY_BRACKETLEFT:
+				Game.cycle_speed(-1)
+			KEY_F1:
+				_toggle_help()
+			KEY_ESCAPE:
+				if Game.match_over:
+					# Mark the key handled before restarting: PlayerController also
+					# handles ESC (cancel placement / clear selection) and would
+					# otherwise act on the scene being torn down.
+					var vp := get_viewport()
+					if vp != null:
+						vp.set_input_as_handled()
+					restart()
 
 func _toggle_help() -> void:
 	_help_visible = not _help_visible
@@ -352,6 +400,13 @@ func _process(_delta: float) -> void:
 			"PAUSED" if Game.paused else "running"]
 		if speed_label.text != s:
 			speed_label.text = s
+		# While paused the readout is the clickable way back in.
+		var want_filter := Control.MOUSE_FILTER_STOP if Game.paused \
+			else Control.MOUSE_FILTER_IGNORE
+		if speed_label.mouse_filter != want_filter:
+			speed_label.mouse_filter = want_filter
+			speed_label.tooltip_text = "Click or press SPACE to resume" if Game.paused \
+				else "SPACE pauses the game"
 	_age_messages()
 	if controller != null and controller.placing_id != "" and not controller.ghost_valid:
 		if warn_label.text != controller.ghost_reason:

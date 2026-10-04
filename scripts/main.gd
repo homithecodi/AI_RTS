@@ -20,6 +20,11 @@ var hud: HUD
 
 ## Build order matters: the world has to exist before anything that queries it, and
 ## the HUD comes last because it subscribes to signals from all of the above.
+##
+## This node deliberately keeps the default process mode. PROCESS_MODE_ALWAYS is
+## inherited by children, so setting it here to keep receiving the pause key would
+## make the whole game ignore the pause. The global shortcuts live in the HUD instead,
+## which is the one subtree that is meant to run while paused.
 func _ready() -> void:
 	_setup_environment()
 	_setup_world()
@@ -118,26 +123,6 @@ func _setup_hud() -> void:
 	add_child(hud)
 	hud.setup(world, camera, controller, ai)
 	hud.minimap.setup(world, camera, controller)
-
-## Global shortcuts only. Anything contextual (selection, orders, placement) belongs
-## to PlayerController, which needs the world and the camera to interpret it.
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey:
-		var ev := event as InputEventKey
-		if not ev.pressed or ev.echo:
-			return
-		match ev.keycode:
-			KEY_SPACE:
-				Game.toggle_pause()
-			KEY_BRACKETRIGHT:
-				Game.cycle_speed(1)
-			KEY_BRACKETLEFT:
-				Game.cycle_speed(-1)
-			KEY_F1:
-				hud.toggle_help()
-			KEY_ESCAPE:
-				if Game.match_over:
-					hud.restart()
 
 func _push_intro_messages() -> void:
 	hud.notify("Enemy base is to the north-east. Destroy every red structure to win.")
