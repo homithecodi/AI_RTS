@@ -396,6 +396,12 @@ func find_enemy_in_radius(pos: Vector3, radius: float,
 			best = b
 	return best
 
+## Nearest structure that does NOT belong to `team`, to `pos`. Returns null if the
+## team owns everything on the map.
+##
+## Note the direction of the argument: pass *your own* team to be told where the
+## enemy is nearest to something. Passing the enemy team instead returns one of your
+## own buildings.
 func nearest_enemy_structure(pos: Vector3, team: int) -> Building:
 	var best: Building = null
 	var best_d := 1.0e20

@@ -26,6 +26,7 @@ var difficulty: float = 1.0
 var reserve: float = 400.0
 
 var _attack_group: Array[Unit] = []
+var _wave_dest := Vector3.ZERO
 var _attacking: bool = false
 var _wave_number: int = 0
 var _next_wave_in: float = 55.0
@@ -350,6 +351,10 @@ func _manage_army() -> void:
 			_launch_wave()
 		return
 
+	# A wave is a snapshot taken when it launched, so recruits built afterwards are
+	# not in it. Pull them in rather than leaving them to mill about near the base.
+	_absorb_recruits()
+
 	# End the wave when it is spent or has stalled far from home.
 	var alive := 0
 	var engaged := 0
@@ -385,13 +390,42 @@ func _launch_wave() -> void:
 	_wave_number += 1
 	_attacking = true
 	_wave_cooldown = 0.0
-	var target := world.nearest_enemy_structure(
-		world.base_pos(Game.other_team(team)), Game.other_team(team))
-	var dest: Vector3 = target.global_position if target != null \
-		else world.base_pos(Game.other_team(team))
+	var enemy_base := world.base_pos(Game.other_team(team))
+	# nearest_enemy_structure() answers "nearest building that is not on `team`", so
+	# it must be given *our* team to return something worth attacking. Passing the
+	# enemy's team here made the wave march on our own structures.
+	var target := world.nearest_enemy_structure(enemy_base, team)
+	var dest: Vector3 = target.global_position if target != null else enemy_base
+	_wave_dest = dest
 	_order_group(_attack_group, dest, true)
 	ai_event.emit("Enemy is attacking (wave %d, %d units)" % [_wave_number, _attack_group.size()])
 	_next_wave_in = 120.0
+
+## Pull freshly produced units into the running wave.
+##
+## Only idle units still near home are taken, so units already fighting at the far end
+## of the map are never dragged off their target and re-sent to the formation.
+func _absorb_recruits() -> void:
+	var f := Game.faction(team)
+	if f == null:
+		return
+	var home := base()
+	var joined: Array[Unit] = []
+	for u in f.units:
+		if not is_instance_valid(u) or u.dead or u in _attack_group:
+			continue
+		if u.target != null and is_instance_valid(u.target):
+			continue
+		if u.order_mode != Unit.Order.NONE:
+			continue
+		if u.global_position.distance_to(home) > 90.0:
+			continue
+		joined.append(u)
+	if joined.is_empty():
+		return
+	for u in joined:
+		_attack_group.append(u)
+	_order_group(joined, _wave_dest, true)
 
 func _recall(where: Vector3) -> void:
 	_order_group(_attack_group, where, true)
@@ -413,7 +447,9 @@ func _order_group(group: Array, dest: Vector3, attacking: bool) -> void:
 	var spacing := 3.0
 	for u in usable:
 		spacing = maxf(spacing, u.radius() * 2.2 + 1.2)
-	var dir := staging_point() - dest
+	# Direction of travel, so the formation is built facing the destination and the
+	# back rows queue up behind it.
+	var dir := dest - staging_point()
 	if dir.length_squared() < 0.01:
 		dir = Vector3(0, 0, 1)
 	dir = dir.normalized()
